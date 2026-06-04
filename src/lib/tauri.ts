@@ -1,0 +1,385 @@
+import { invoke } from "@tauri-apps/api/core";
+
+// ── Types ────────────────────────────────────────────────
+
+export interface Provider {
+  id: number;
+  name: string;
+  base_url: string;
+  api_key_env: string;
+  proxy_mode: "system" | "custom" | "direct";
+  proxy_url: string | null;
+  auth_header: string | null;
+  billing_type: "plan" | "pay_per_use";
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Model {
+  id: number;
+  provider_id: number;
+  model_id: string;
+  display_name: string | null;
+  auth_type: string;
+  is_default: boolean;
+  config_json: string | null;
+  created_at: string;
+}
+
+// ── Provider Commands ────────────────────────────────────
+
+export const listProviders = () => invoke<Provider[]>("list_providers");
+
+export const getProvider = (id: number) =>
+  invoke<Provider>("get_provider", { id });
+
+export const createProvider = (args: {
+  name: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+  proxyMode?: string;
+  proxyUrl?: string;
+  authHeader?: string;
+  billingType?: string;
+}) => invoke<Provider>("create_provider", args);
+
+export const updateProvider = (args: {
+  id: number;
+  name?: string;
+  baseUrl?: string;
+  apiKeyEnv?: string;
+  proxyMode?: string;
+  proxyUrl?: string;
+  authHeader?: string;
+  billingType?: string;
+  isActive?: boolean;
+}) => invoke<Provider>("update_provider", args);
+
+export const deleteProvider = (id: number) =>
+  invoke<void>("delete_provider", { id });
+
+// ── Model Commands ───────────────────────────────────────
+
+export const listModels = (providerId?: number) =>
+  invoke<Model[]>("list_models", { providerId: providerId ?? null });
+
+export const getModel = (id: number) => invoke<Model>("get_model", { id });
+
+export const createModel = (args: {
+  providerId: number;
+  modelId: string;
+  displayName?: string;
+  authType: string;
+  isDefault?: boolean;
+  configJson?: string;
+}) => invoke<Model>("create_model", args);
+
+export const updateModel = (args: {
+  id: number;
+  displayName?: string;
+  authType?: string;
+  isDefault?: boolean;
+  configJson?: string;
+}) => invoke<Model>("update_model", args);
+
+export const deleteModel = (id: number) =>
+  invoke<void>("delete_model", { id });
+
+// ── Config Commands ──────────────────────────────────────
+
+export const readSettings = () =>
+  invoke<Record<string, unknown>>("read_settings");
+
+export const writeSettingsField = (path: string, value: unknown) =>
+  invoke<Record<string, unknown>>("write_settings_field", { path, value });
+
+export const getEnvVars = () =>
+  invoke<Record<string, string>>("get_env_vars");
+
+export const syncConfigToSettings = () =>
+  invoke<Record<string, unknown>>("sync_config_to_settings");
+
+export const previewSyncConfig = () =>
+  invoke<Record<string, unknown>>("preview_sync_config");
+
+// ── File System Commands ─────────────────────────────────
+
+export const revealInExplorer = (path: string) =>
+  invoke<void>("reveal_in_explorer", { path });
+
+export const getQwenPaths = () =>
+  invoke<Record<string, string>>("get_qwen_paths");
+
+// ── Installer Commands ───────────────────────────────────
+
+export interface ToolVersion {
+  path: string;
+  version: string;
+}
+
+export const detectQwenVersion = () =>
+  invoke<string | null>("detect_qwen_version");
+
+export const checkLatestQwenVersion = () =>
+  invoke<string>("check_latest_qwen_version");
+
+export const detectNodeVersion = () =>
+  invoke<ToolVersion | null>("detect_node_version");
+
+export const detectNpmVersion = () =>
+  invoke<ToolVersion | null>("detect_npm_version");
+
+export const installQwenCode = (mirror?: string) =>
+  invoke<string>("install_qwen_code", { mirror: mirror ?? null });
+
+export const updateQwenCode = (mirror?: string) =>
+  invoke<string>("update_qwen_code", { mirror: mirror ?? null });
+
+export const configureNpmMirror = (registry: string) =>
+  invoke<void>("configure_npm_mirror", { registry });
+
+export const getNpmMirror = () =>
+  invoke<string>("get_npm_mirror");
+
+// ── Filesystem Commands ──────────────────────────────────
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  skill_type: string;
+  path: string;
+  source: string;
+}
+
+export interface ProjectInfo {
+  name: string;
+  path: string;
+  session_count: number;
+}
+
+export interface SessionInfo {
+  id: string;
+  title: string;
+  started_at: string;
+  message_count: number;
+  file_path: string;
+}
+
+export interface ToolCallStat {
+  name: string;
+  count: number;
+}
+
+export interface SessionMessage {
+  uuid: string;
+  msg_type: string;
+  timestamp: string;
+  model: string | null;
+  text: string;
+  thinking: string | null;
+  has_tool_use: boolean;
+  tool_name: string | null;
+  tool_input_preview: string | null;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface SessionDetail {
+  message_count: number;
+  models: string;
+  input_tokens: number;
+  output_tokens: number;
+  duration: string;
+  tool_calls: ToolCallStat[];
+  skill_calls: ToolCallStat[];
+  agent_calls: ToolCallStat[];
+  messages: SessionMessage[];
+}
+
+export interface PagedMessages {
+  messages: SessionMessage[];
+  total_count: number;
+  has_older: boolean;
+  has_newer: boolean;
+}
+
+export interface MemoryFile {
+  name: string;
+  memory_type: string;
+  description: string;
+  path: string;
+}
+
+export interface AgentDef {
+  name: string;
+  description: string;
+  model: string;
+  path: string;
+}
+
+export interface ExtensionInfo {
+  name: string;
+  version: string;
+  description: string;
+  enabled: boolean;
+  path: string;
+  has_skills: boolean;
+  has_hooks: boolean;
+  has_commands: boolean;
+  has_agents: boolean;
+}
+
+// Skills
+export const listSkills = () => invoke<SkillInfo[]>("list_skills");
+export const readSkillContent = (path: string) => invoke<string>("read_skill_content", { path });
+export const writeSkill = (path: string, content: string) =>
+  invoke<void>("write_skill", { path, content });
+export const deleteSkill = (path: string) => invoke<void>("delete_skill", { path });
+
+// Projects & Sessions
+export const listProjects = () => invoke<ProjectInfo[]>("list_projects");
+export const listSessions = (project: string) => invoke<SessionInfo[]>("list_sessions", { project });
+export const getSessionDetail = (project: string, sessionId: string) =>
+  invoke<SessionDetail>("get_session_detail", { project, sessionId });
+export const getSessionMessagesPaged = (project: string, sessionId: string, offset: number, limit: number) =>
+  invoke<PagedMessages>("get_session_messages_paged", { project, sessionId, offset, limit });
+export const readSession = (project: string, sessionId: string) =>
+  invoke<unknown[]>("read_session", { project, sessionId });
+
+// Memory
+export const listMemories = (project?: string) =>
+  invoke<MemoryFile[]>("list_memories", { project: project ?? null });
+export const readMemory = (path: string) =>
+  invoke<{ frontmatter: string; content: string }>("read_memory", { path });
+export const writeMemory = (path: string, content: string) =>
+  invoke<void>("write_memory", { path, content });
+export const deleteMemory = (path: string) => invoke<void>("delete_memory", { path });
+
+// Index
+export interface GlobalIndex {
+  memories: MemoryFile[];
+  projects: ProjectIndex[];
+}
+export interface ProjectIndex {
+  name: string;
+  session_count: number;
+  memory_count: number;
+  latest_session: string | null;
+}
+export const getIndex = () => invoke<GlobalIndex>("get_index");
+
+// Analytics
+export interface NameCount {
+  name: string;
+  count: number;
+}
+export interface ModelRanking {
+  name: string;
+  session_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read: number;
+  cache_hit_rate: number;
+}
+export interface ProjectStats {
+  project: string;
+  session_count: number;
+  total_messages: number;
+  total_tokens: number;
+}
+export interface DailyStats {
+  date: string;
+  session_count: number;
+  message_count: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+export interface ModelDailyRow {
+  date: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read: number;
+  message_count: number;
+}
+export interface AnalyticsSummary {
+  total_sessions: number;
+  total_messages: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cache_read: number;
+  active_days: number;
+  top_models: ModelRanking[];
+  top_tools: NameCount[];
+  top_skills: NameCount[];
+  top_agents: NameCount[];
+  project_stats: ProjectStats[];
+  daily: DailyStats[];
+  model_daily: ModelDailyRow[];
+}
+export const syncSessionStats = () => invoke<number>("sync_session_stats");
+export const getAnalyticsSummary = () =>
+  invoke<AnalyticsSummary>("get_analytics_summary");
+
+// ── Model Detail (usage.db + proxy) ──────────────────────
+
+export interface ModelMeta {
+  model: string;
+  total_requests: number;
+  total_input: number;
+  total_output: number;
+  total_cache: number;
+  avg_tps: number;
+  p50_latency: number;
+  p95_latency: number;
+}
+
+export interface ModelDailyDetail {
+  date: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read: number;
+  uncached_input: number;
+  avg_tps: number;
+  avg_latency: number;
+  p50_latency: number;
+  p95_latency: number;
+  request_count: number;
+}
+
+export interface ModelDetailData {
+  models: ModelMeta[];
+  daily: ModelDailyDetail[];
+}
+
+export interface UsageDbInfo {
+  exists: boolean;
+  tables: string[];
+  call_records_columns: string[];
+  call_records_count: number;
+  sample_row: string | null;
+}
+
+export const checkUsageDb = () => invoke<UsageDbInfo>("check_usage_db");
+export const getModelDetailStats = (days: number) =>
+  invoke<ModelDetailData>("get_model_detail_stats", { days });
+
+// Agents
+export const listAgents = () => invoke<AgentDef[]>("list_agents");
+export const readAgent = (name: string) =>
+  invoke<{ frontmatter: string; content: string }>("read_agent", { name });
+export const writeAgent = (name: string, content: string) =>
+  invoke<void>("write_agent", { name, content });
+export const deleteAgent = (name: string) => invoke<void>("delete_agent", { name });
+
+// Extensions
+export const listExtensions = () => invoke<ExtensionInfo[]>("list_extensions");
+export const readExtensionDetail = (name: string) =>
+  invoke<{ config: unknown; context: string | null; path: string }>("read_extension_detail", { name });
+export const toggleExtension = (name: string, enabled: boolean) =>
+  invoke<void>("toggle_extension", { name, enabled });
+export const deleteExtension = (name: string) => invoke<void>("delete_extension", { name });
+export const writeExtensionContext = (name: string, content: string) =>
+  invoke<void>("write_extension_context", { name, content });

@@ -91,11 +91,18 @@ CREATE TABLE providers (
     name        TEXT NOT NULL UNIQUE,
     base_url    TEXT NOT NULL,
     api_key_env TEXT NOT NULL,           -- 环境变量名（不存实际 key）
+    proxy_mode  TEXT NOT NULL DEFAULT 'system' CHECK(proxy_mode IN ('system', 'custom', 'direct')),
+    proxy_url   TEXT,                    -- custom 模式下的代理地址，如 http://127.0.0.1:7890
+    billing_type TEXT NOT NULL DEFAULT 'pay_per_use' CHECK(billing_type IN ('plan', 'pay_per_use')),
     is_active   BOOLEAN DEFAULT 1,
     created_at  TEXT DEFAULT (datetime('now')),
     updated_at  TEXT DEFAULT (datetime('now'))
 );
 ```
+
+> **proxy_mode 说明：** `system` 自动检测系统代理（Windows 注册表/WinHTTP + 环境变量），`custom` 使用 proxy_url 指定地址，`direct` 直连忽略代理。Qwen/DashScope 等国内供应商默认 `direct`，OpenAI/Anthropic 等默认 `system`。
+
+> **billing_type 说明：** `plan` 订阅制（优先消耗额度），`pay_per_use` 按量计费。路由优先级：billing_type(plan > pay_per_use) > 缓存亲和(last_success_at) > 负载均衡(时延+并发)。
 
 ### models — 模型配置（auth_type 在模型级）
 
@@ -105,7 +112,7 @@ CREATE TABLE models (
     provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
     model_id    TEXT NOT NULL,           -- 后端实际模型 ID
     display_name TEXT,
-    auth_type   TEXT NOT NULL CHECK(auth_type IN ('openai', 'anthropic', 'gemini')),
+    auth_type   TEXT NOT NULL,           -- JSON 数组: ["openai","anthropic"]
     is_default  BOOLEAN DEFAULT 0,
     config_json TEXT,                     -- generationConfig JSON
     created_at  TEXT DEFAULT (datetime('now')),

@@ -17,6 +17,10 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    // 禁用浏览器缓存，避免样式/代码更新后仍加载旧版本
+    headers: {
+      "Cache-Control": "no-store",
+    },
     hmr: host
       ? {
           protocol: "ws",

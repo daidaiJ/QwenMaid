@@ -131,3 +131,69 @@ API Key 等敏感字段：
 | `validate_settings(content)` | 校验配置内容 |
 | `get_env_vars()` | 获取当前环境变量列表（脱敏） |
 | `detect_qwen_version()` | 检测 Qwen Code 版本 |
+
+## 配置快照与回滚
+
+用户可对当前配置状态做快照，用于后续回滚。快照包含三部分：
+
+### 快照内容
+
+| 组成 | 来源 | 格式 |
+|---|---|---|
+| Qwen Code 配置 | `~/.qwen/settings.json` | JSON 原文 |
+| 供应商配置 | AgentBox DB `providers` 表 | JSON 序列化 |
+| 模型配置 | AgentBox DB `models` 表 | JSON 序列化 |
+
+### 快照存储
+
+```
+~/.qwen/agentbox-snapshots/
+├── 2026-06-03T14-30-00/
+│   ├── manifest.json        ← 快照元数据（时间、描述、版本）
+│   ├── settings.json        ← Qwen Code 配置副本
+│   └── agentbox-config.json ← providers + models 快照
+├── 2026-06-01T10-00-00/
+│   └── ...
+```
+
+`manifest.json`：
+```json
+{
+  "id": "2026-06-03T14-30-00",
+  "created_at": "2026-06-03T14:30:00Z",
+  "description": "用户手动快照",
+  "qwen_version": "0.16.2",
+  "settings_hash": "sha256:...",
+  "providers_count": 3,
+  "models_count": 8
+}
+```
+
+### 快照操作
+
+| 操作 | 说明 |
+|---|---|
+| 创建快照 | 用户主动触发，读取当前三部分配置打包存储 |
+| 列出快照 | 按时间倒序展示，显示摘要信息 |
+| 预览快照 | 展示快照内容与当前配置的 diff |
+| 应用快照 | 将快照内容写回对应位置（应用前自动创建当前状态快照） |
+| 删除快照 | 清理不需要的快照 |
+
+### 快照与自动备份的区别
+
+| | 自动备份 | 手动快照 |
+|---|---|---|
+| 触发时机 | 每次保存 settings.json 时自动创建 | 用户主动触发 |
+| 内容范围 | 仅 settings.json | settings.json + providers + models |
+| 存储位置 | `~/.qwen/backup/` | `~/.qwen/agentbox-snapshots/` |
+| 用途 | 单文件回滚 | 全局配置状态回滚 |
+
+### IPC 命令
+
+| 命令 | 说明 |
+|---|---|
+| `create_snapshot(description)` | 创建快照（含 settings.json + DB providers/models） |
+| `list_snapshots()` | 列出所有快照摘要 |
+| `get_snapshot_diff(snapshot_id)` | 快照与当前配置的差异 |
+| `apply_snapshot(snapshot_id)` | 应用快照（应用前自动备份当前状态） |
+| `delete_snapshot(snapshot_id)` | 删除快照 |
