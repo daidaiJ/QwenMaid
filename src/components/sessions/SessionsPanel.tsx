@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import {
   GenericThreeColumnPanel,
@@ -7,6 +7,7 @@ import {
 } from "@/components/layout/GenericPanel";
 import { getIndex, listSessions, getSessionDetail, getSessionMessagesPaged } from "@/lib/tauri";
 import type { SessionDetail, SessionMessage, ToolCallStat } from "@/lib/tauri";
+import { listen } from "@tauri-apps/api/event";
 import {
   User,
   Bot,
@@ -32,9 +33,27 @@ export function SessionsPanel() {
   const [loading, setLoading] = useState(false);
   const loadedCountsRef = useRef<Record<string, number>>({});
   const [reloadGroupId, setReloadGroupId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // 后台同步完成后自动刷新列表
+  useEffect(() => {
+    const unlisten = listen("stats-synced", () => {
+      setRefreshKey((k) => k + 1);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
+  // 后台同步完成后，如果当前有选中会话，刷新其统计信息
+  useEffect(() => {
+    if (selectedSession && detail) {
+      getSessionDetail(selectedSession.project, selectedSession.id)
+        .then(setDetail)
+        .catch(() => {});
+    }
+  }, [refreshKey]);
 
   const loadItems = useCallback(async (): Promise<ListItem[]> => {
-    const index = await getIndex();
+    const index = await getIndex(20);
     const items: ListItem[] = [];
     for (const p of index.projects) {
       if (p.session_count === 0 && p.memory_count === 0) continue;
@@ -54,11 +73,11 @@ export function SessionsPanel() {
   const loadGroupChildren = useCallback(
     async (groupId: string): Promise<ListItem[]> => {
       const project = groupId.replace("project:", "");
-      const sessions = await listSessions(project);
       const count = loadedCountsRef.current[groupId] ?? 30;
-      const batch = sessions.slice(0, count);
+      // 后端 limit，只扫描需要的文件数
+      const sessions = await listSessions(project, count);
 
-      const items: ListItem[] = batch.map((s) => ({
+      const items: ListItem[] = sessions.map((s) => ({
         id: `session:${project}:${s.id}`,
         label: s.title || s.id.slice(0, 8),
         description: formatRelativeTime(s.started_at),
@@ -66,12 +85,11 @@ export function SessionsPanel() {
         badgeColor: "var(--text-muted)",
       }));
 
-      // 追加"加载更多"伪项
-      const remaining = sessions.length - count;
-      if (remaining > 0) {
+      // 追加"加载更多"伪项（用 count 估算剩余，避免全量扫描）
+      if (sessions.length >= count) {
         items.push({
           id: `__load_more_${groupId}`,
-          label: `加载更多（剩余 ${remaining} 条）`,
+          label: `加载更多`,
           badge: "…",
           badgeColor: "var(--text-muted)",
         });
@@ -115,23 +133,23 @@ export function SessionsPanel() {
       setSelectedSession({ project, id: sessionId });
       setLoading(true);
       setMessages([]);
+      setDetail(null);
+
+      // Phase 1: 先加载消息（用户立刻看到内容）
       try {
-        // 并行加载详情（统计信息）和第一页消息（最新 50 条）
-        const [d, paged] = await Promise.all([
-          getSessionDetail(project, sessionId),
-          getSessionMessagesPaged(project, sessionId, 0, 50),
-        ]);
-        setDetail(d);
+        const paged = await getSessionMessagesPaged(project, sessionId, 0, 50);
         setMessages(paged.messages);
         setMsgTotal(paged.total_count);
         setHasOlder(paged.has_older);
         msgOffsetRef.current = 50;
       } catch {
-        setDetail(null);
         setMessages([]);
       } finally {
         setLoading(false);
       }
+
+      // Phase 2: 统计信息延迟填充（不阻塞消息展示）
+      getSessionDetail(project, sessionId).then(setDetail).catch(() => {});
     },
     [],
   );
@@ -167,6 +185,7 @@ export function SessionsPanel() {
       onSelect={handleSelect}
       onItemClick={handleItemClick}
       reloadGroupId={reloadGroupId}
+      refreshKey={refreshKey}
       renderContent={() => {
         if (loading) {
           return (
@@ -185,17 +204,14 @@ export function SessionsPanel() {
         }
         return (
           <div className="flex flex-col h-full">
-            {/* 加载更多（更早消息）按钮 */}
+            {/* 滚动到顶部时自动加载更早消息 */}
             {hasOlder && (
-              <div className="flex justify-center py-2 border-b border-[var(--border)]">
-                <button
-                  onClick={loadOlder}
-                  disabled={loadingOlder}
-                  className="text-[11px] text-[var(--accent)] hover:underline disabled:opacity-40"
-                >
-                  {loadingOlder ? "加载中…" : `加载更早消息（已加载 ${messages.length}/${msgTotal}）`}
-                </button>
-              </div>
+              <LoadMoreSentinel
+                loading={loadingOlder}
+                loaded={messages.length}
+                total={msgTotal}
+                onLoadMore={loadOlder}
+              />
             )}
             <MessageList messages={messages} />
           </div>
@@ -260,6 +276,39 @@ export function SessionsPanel() {
         );
       }}
     />
+  );
+}
+
+// ── 滚动触底自动加载 ─────────────────────────────────────
+
+function LoadMoreSentinel({
+  loading, loaded, total, onLoadMore,
+}: {
+  loading: boolean; loaded: number; total: number; onLoadMore: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !loading) {
+          onLoadMore();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loading, onLoadMore]);
+
+  return (
+    <div ref={ref} className="flex justify-center py-2 border-b border-[var(--border)]">
+      <span className="text-[11px] text-[var(--text-muted)]">
+        {loading ? "加载中…" : `已加载 ${loaded}/${total}`}
+      </span>
+    </div>
   );
 }
 

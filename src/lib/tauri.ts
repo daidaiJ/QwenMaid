@@ -194,7 +194,6 @@ export interface SessionDetail {
   tool_calls: ToolCallStat[];
   skill_calls: ToolCallStat[];
   agent_calls: ToolCallStat[];
-  messages: SessionMessage[];
 }
 
 export interface PagedMessages {
@@ -239,7 +238,8 @@ export const deleteSkill = (path: string) => invoke<void>("delete_skill", { path
 
 // Projects & Sessions
 export const listProjects = () => invoke<ProjectInfo[]>("list_projects");
-export const listSessions = (project: string) => invoke<SessionInfo[]>("list_sessions", { project });
+export const listSessions = (project: string, limit?: number) =>
+  invoke<SessionInfo[]>("list_sessions", { project, limit: limit ?? null });
 export const getSessionDetail = (project: string, sessionId: string) =>
   invoke<SessionDetail>("get_session_detail", { project, sessionId });
 export const getSessionMessagesPaged = (project: string, sessionId: string, offset: number, limit: number) =>
@@ -267,7 +267,8 @@ export interface ProjectIndex {
   memory_count: number;
   latest_session: string | null;
 }
-export const getIndex = () => invoke<GlobalIndex>("get_index");
+export const getIndex = (limit?: number, offset?: number) =>
+  invoke<GlobalIndex>("get_index", { limit: limit ?? null, offset: offset ?? null });
 
 // Analytics
 export interface NameCount {
@@ -311,16 +312,20 @@ export interface AnalyticsSummary {
   total_cache_read: number;
   active_days: number;
   top_models: ModelRanking[];
-  top_tools: NameCount[];
-  top_skills: NameCount[];
-  top_agents: NameCount[];
   project_stats: ProjectStats[];
   daily: DailyStats[];
   model_daily: ModelDailyRow[];
 }
+export interface AnalyticsTopItems {
+  top_tools: NameCount[];
+  top_skills: NameCount[];
+  top_agents: NameCount[];
+}
 export const syncSessionStats = () => invoke<number>("sync_session_stats");
 export const getAnalyticsSummary = () =>
   invoke<AnalyticsSummary>("get_analytics_summary");
+export const getAnalyticsTopItems = () =>
+  invoke<AnalyticsTopItems>("get_analytics_top_items");
 
 // ── Model Detail (usage.db + proxy) ──────────────────────
 
@@ -383,3 +388,59 @@ export const toggleExtension = (name: string, enabled: boolean) =>
 export const deleteExtension = (name: string) => invoke<void>("delete_extension", { name });
 export const writeExtensionContext = (name: string, content: string) =>
   invoke<void>("write_extension_context", { name, content });
+
+// ── MCP Commands ─────────────────────────────────────────
+
+export interface McpConfig {
+  port: number;
+  auto_inject: boolean;
+  smartsearch_enabled: boolean;
+  academicsearch_enabled: boolean;
+  cleanfetch_enabled: boolean;
+  search_mode: string;
+  tavily_api_key: string | null;
+  jina_api_key: string | null;
+  proxy_url: string | null;
+}
+
+export interface ToolStats {
+  tool_name: string;
+  total: number;
+  success: number;
+}
+
+export interface ApiStats {
+  api_name: string;
+  total: number;
+  success: number;
+}
+
+export interface McpStats {
+  monthly_total: number;
+  monthly_success: number;
+  by_tool: ToolStats[];
+  by_api: ApiStats[];
+}
+
+export const getMcpConfig = () => invoke<McpConfig>("get_mcp_config");
+
+export const saveMcpConfig = (config: McpConfig) =>
+  invoke<void>("save_mcp_config", {
+    port: config.port,
+    autoInject: config.auto_inject,
+    smartsearchEnabled: config.smartsearch_enabled,
+    academicsearchEnabled: config.academicsearch_enabled,
+    cleanfetchEnabled: config.cleanfetch_enabled,
+    searchMode: config.search_mode,
+    tavilyApiKey: config.tavily_api_key,
+    jinaApiKey: config.jina_api_key,
+    proxyUrl: config.proxy_url,
+  });
+
+export const restartMcpServer = () => invoke<void>("restart_mcp_server");
+
+export const getMcpStats = () => invoke<McpStats>("get_mcp_stats");
+
+export const injectStatusline = () => invoke<void>("inject_statusline");
+
+export const removeStatusline = () => invoke<void>("remove_statusline");

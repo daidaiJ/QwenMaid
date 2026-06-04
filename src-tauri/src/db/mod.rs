@@ -245,6 +245,48 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
         }
     }
 
+    if current < 7 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS mcp_config (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                port INTEGER NOT NULL DEFAULT 8339,
+                auto_inject BOOLEAN NOT NULL DEFAULT 0,
+                smartsearch_enabled BOOLEAN NOT NULL DEFAULT 1,
+                academicsearch_enabled BOOLEAN NOT NULL DEFAULT 0,
+                cleanfetch_enabled BOOLEAN NOT NULL DEFAULT 1,
+                search_mode TEXT NOT NULL DEFAULT 'engine',
+                tavily_api_key TEXT,
+                jina_api_key TEXT,
+                proxy_url TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            INSERT OR IGNORE INTO mcp_config (id) VALUES (1);
+
+            CREATE TABLE IF NOT EXISTS mcp_api_stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tool_name TEXT NOT NULL,
+                api_name TEXT NOT NULL,
+                success BOOLEAN NOT NULL,
+                called_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_mcp_stats_tool ON mcp_api_stats(tool_name, called_at);
+            CREATE INDEX IF NOT EXISTS idx_mcp_stats_month ON mcp_api_stats(called_at);",
+        )
+        .map_err(|e| e.to_string())?;
+
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (7)", [])
+            .map_err(|e| e.to_string())?;
+    }
+
+    if current < 8 {
+        let _ = conn.execute_batch("ALTER TABLE session_stats ADD COLUMN parsed_lines INTEGER DEFAULT 0");
+        let _ = conn.execute_batch("ALTER TABLE session_stats ADD COLUMN title TEXT DEFAULT ''");
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (8)", [])
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -288,5 +330,29 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         init_db_with_conn(&conn);
         init_db_with_conn(&conn);
+    }
+
+    #[test]
+    fn dump_db_state() {
+        let candidates = [
+            std::path::PathBuf::from("target/debug/data/agentbox.db"),
+            std::path::PathBuf::from("../target/debug/data/agentbox.db"),
+        ];
+        let Some(db_path) = candidates.iter().find(|p| p.exists()).cloned() else { return };
+        let conn = Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM session_stats", [], |r| r.get(0)).unwrap();
+        let with_tokens: i64 = conn.query_row("SELECT COUNT(*) FROM session_stats WHERE input_tokens > 0", [], |r| r.get(0)).unwrap();
+        let projects_with_tokens: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT project) FROM session_stats WHERE input_tokens > 0", [], |r| r.get(0)
+        ).unwrap();
+        eprintln!("DB: {} rows, {} with tokens, {} projects with tokens", total, with_tokens, projects_with_tokens);
+
+        let mut stmt = conn.prepare(
+            "SELECT project, SUM(input_tokens), COUNT(*) FROM session_stats GROUP BY project ORDER BY SUM(input_tokens) DESC LIMIT 15"
+        ).unwrap();
+        for row in stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,i64>(1)?, r.get::<_,i64>(2)?))).unwrap().flatten() {
+            eprintln!("  {}: {} tokens, {} sessions", row.0, row.1, row.2);
+        }
     }
 }

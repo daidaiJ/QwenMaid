@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { syncSessionStats, getAnalyticsSummary } from "@/lib/tauri";
-import type { AnalyticsSummary, ModelDailyRow } from "@/lib/tauri";
+import { syncSessionStats, getAnalyticsSummary, getAnalyticsTopItems } from "@/lib/tauri";
+import type { AnalyticsSummary, AnalyticsTopItems, ModelDailyRow } from "@/lib/tauri";
 import { AnalyticsDetail } from "./AnalyticsDetail";
 import {
   BarChart3,
@@ -16,6 +16,7 @@ import {
 
 export function AnalyticsPanel() {
   const [data, setData] = useState<AnalyticsSummary | null>(null);
+  const [topItems, setTopItems] = useState<AnalyticsTopItems | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncedCount, setSyncedCount] = useState<number | null>(null);
@@ -26,7 +27,12 @@ export function AnalyticsPanel() {
     setLoading(true);
     setError(null);
     try {
-      setData(await getAnalyticsSummary());
+      const [summary, tops] = await Promise.all([
+        getAnalyticsSummary(),
+        getAnalyticsTopItems(),
+      ]);
+      setData(summary);
+      setTopItems(tops);
     } catch (e) {
       setData(null);
       setError(String(e));
@@ -134,7 +140,7 @@ export function AnalyticsPanel() {
               <StatCard icon={<Zap size={13} />} label="总 Token" value={fmtTok(data.total_input_tokens + data.total_output_tokens)} color="#d29922" />
               <StatCard icon={<Database size={13} />} label="缓存命中" value={fmtTok(data.total_cache_read)} color="#bc8cff" />
               <StatCard icon={<Zap size={13} />} label="活跃天" value={String(data.active_days)} color="#58a6ff" />
-              <StatCard icon={<Wrench size={13} />} label="工具调用" value={data.top_tools.reduce((s, t) => s + t.count, 0).toLocaleString()} color="#d29922" />
+              <StatCard icon={<Wrench size={13} />} label="工具调用" value={(topItems?.top_tools ?? []).reduce((s, t) => s + t.count, 0).toLocaleString()} color="#d29922" />
             </div>
 
             {/* ── Row 2: 项目统计(上) | I/O(下)(左半) ─ 模型趋势(右半) ── */}
@@ -196,24 +202,24 @@ export function AnalyticsPanel() {
                   <ModelRankingTable models={data.top_models} />
                 </Section>
               )}
-              {data.top_tools.length > 0 && (
+              {(topItems?.top_tools ?? []).length > 0 && (
                 <Section title="工具调用排行" icon={<Wrench size={13} />}>
-                  <BarList items={data.top_tools} max={data.top_tools[0]?.count ?? 1} color="#d29922" />
+                  <BarList items={topItems!.top_tools} max={topItems!.top_tools[0]?.count ?? 1} color="#d29922" />
                 </Section>
               )}
             </div>
 
             {/* ── Row 4: 技能调用(左) + 子智能体(右) ── */}
-            {(data.top_skills.length > 0 || data.top_agents.length > 0) && (
+            {((topItems?.top_skills ?? []).length > 0 || (topItems?.top_agents ?? []).length > 0) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {data.top_skills.length > 0 && (
+                {(topItems?.top_skills ?? []).length > 0 && (
                   <Section title="技能调用排行" icon={<Zap size={13} />}>
-                    <BarList items={data.top_skills} max={data.top_skills[0]?.count ?? 1} color="#bc8cff" />
+                    <BarList items={topItems!.top_skills} max={topItems!.top_skills[0]?.count ?? 1} color="#bc8cff" />
                   </Section>
                 )}
-                {data.top_agents.length > 0 && (
+                {(topItems?.top_agents ?? []).length > 0 && (
                   <Section title="子智能体调用" icon={<Cpu size={13} />}>
-                    <BarList items={data.top_agents} max={data.top_agents[0]?.count ?? 1} color="#58a6ff" />
+                    <BarList items={topItems!.top_agents} max={topItems!.top_agents[0]?.count ?? 1} color="#58a6ff" />
                   </Section>
                 )}
               </div>

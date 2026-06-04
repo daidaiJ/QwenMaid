@@ -1,11 +1,25 @@
 pub mod commands;
 pub mod config;
 pub mod db;
+pub mod mcp;
 pub mod presets;
 pub mod proxy;
 
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+/// 获取数据目录：跟随安装目录下的 data/ 子目录
+fn resolve_data_dir() -> std::path::PathBuf {
+    // 开发模式: exe 在 target/debug/，数据放那里即可
+    // 发布模式: exe 在安装目录，数据放 <install_dir>/data/
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let data_dir = exe_dir.join("data");
+    std::fs::create_dir_all(&data_dir).ok();
+    data_dir
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -62,11 +76,19 @@ pub fn run() {
             commands::filesystem::get_session_messages_paged,
             commands::sync_session_stats,
             commands::get_analytics_summary,
+            commands::get_analytics_top_items,
             commands::metrics::check_usage_db,
             commands::metrics::get_model_detail_stats,
             commands::search_skills_sh,
             commands::install_skill_from_repo,
             commands::uninstall_skill,
+            // MCP
+            commands::get_mcp_config,
+            commands::save_mcp_config,
+            commands::restart_mcp_server,
+            commands::get_mcp_stats,
+            commands::inject_statusline,
+            commands::remove_statusline,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -76,24 +98,26 @@ pub fn run() {
                 }
             }
 
-            // 数据库初始化（轻量，可在 setup 中同步完成）
-            let app_data = app
-                .path()
-                .app_data_dir()
-                .expect("failed to get app data dir");
-            std::fs::create_dir_all(&app_data).ok();
-
-            let db_path = db::db_path(&app_data);
+            // 数据目录跟随安装位置
+            let data_dir = resolve_data_dir();
+            let db_path = db::db_path(&data_dir);
             let conn = db::init_db(&db_path).expect("failed to init database");
             let db = Arc::new(std::sync::Mutex::new(conn));
 
+            // MCP 服务器句柄
+            let mcp_shutdown: Arc<std::sync::Mutex<Option<tokio::sync::watch::Sender<bool>>>> =
+                Arc::new(std::sync::Mutex::new(None));
+
             // 注册 Tauri 状态
-            app.manage(commands::AppState { db: db.clone() });
+            app.manage(commands::AppState {
+                db: db.clone(),
+                mcp_shutdown: mcp_shutdown.clone(),
+                global_memory_cache: Arc::new(std::sync::Mutex::new(Vec::new())),
+            });
 
             // 延迟启动代理服务器（不阻塞 setup）
             let db_for_proxy = db.clone();
             tauri::async_runtime::spawn(async move {
-                // 延迟 500ms，让窗口先渲染
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
                 let client_pool = Arc::new(proxy::client_pool::ClientPool::new());
@@ -110,20 +134,62 @@ pub fn run() {
                 }
             });
 
-            // 定时同步会话统计数据（每 5 分钟）
-            let db_for_sync = db.clone();
+            // 延迟启动 MCP 服务器
+            let db_for_mcp = db.clone();
+            let mcp_shutdown_for_mcp = mcp_shutdown.clone();
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+
+                let (tx, rx) = tokio::sync::watch::channel(false);
+                {
+                    let mut handle = mcp_shutdown_for_mcp.lock().unwrap();
+                    *handle = Some(tx);
+                }
+
+                if let Err(e) = mcp::start_mcp_server(db_for_mcp, rx).await {
+                    log::error!("MCP server failed: {}", e);
+                }
+            });
+
+            // 定时同步：用独立 DB 连接，不与 UI 读操作争锁
+            let sync_db_path = db_path.clone();
+            let app_handle_for_sync = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 loop {
-                    {
-                        let Ok(conn) = db_for_sync.lock() else { continue };
-                        if let Err(e) = commands::analytics::sync_session_stats(&conn) {
-                            log::warn!("session stats sync failed: {}", e);
+                    // 每次循环打开独立连接，同步完即关闭
+                    match db::init_db(&sync_db_path) {
+                        Ok(sync_conn) => {
+                            if let Err(e) = commands::analytics::sync_session_stats(&sync_conn) {
+                                log::warn!("session stats sync failed: {}", e);
+                            } else {
+                                let _ = app_handle_for_sync.emit("stats-synced", ());
+                            }
                         }
+                        Err(e) => log::warn!("sync: failed to open db: {}", e),
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(300)).await;
                 }
             });
+
+            // 初始化全局记忆缓存（只读一个 QWEN.md）
+            {
+                let qwen_home = dirs::home_dir().unwrap_or_default().join(".qwen");
+                let qwen_md = qwen_home.join("QWEN.md");
+                if qwen_md.is_file() {
+                    let content = std::fs::read_to_string(&qwen_md).unwrap_or_default();
+                    let (name, desc) = commands::filesystem::parse_frontmatter(&content);
+                    let mem_type = commands::filesystem::extract_frontmatter_field(&content, "type");
+                    let state = app.state::<commands::AppState>();
+                    let mut cache = state.global_memory_cache.lock().unwrap();
+                    cache.push(commands::filesystem::MemoryFile {
+                        name: name.unwrap_or_else(|| "QWEN".into()),
+                        memory_type: mem_type.unwrap_or_else(|| "unknown".into()),
+                        description: desc,
+                        path: qwen_md.to_string_lossy().to_string(),
+                    });
+                }
+            }
 
             Ok(())
         })

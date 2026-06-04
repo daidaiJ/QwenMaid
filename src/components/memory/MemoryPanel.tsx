@@ -14,7 +14,7 @@ export function MemoryPanel() {
   const [saving, setSaving] = useState(false);
 
   const loadItems = useCallback(async (): Promise<ListItem[]> => {
-    const index = await getIndex();
+    const index = await getIndex(20);
     const items: ListItem[] = [];
 
     // 全局记忆

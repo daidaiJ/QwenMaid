@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashSet;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Seek};
 use std::path::PathBuf;
 
 use super::AppState;
@@ -96,7 +95,7 @@ fn parse_skill_frontmatter(path: &PathBuf) -> (Option<String>, String) {
 }
 
 /// 解析 YAML frontmatter，提取 name 和 description
-fn parse_frontmatter(content: &str) -> (Option<String>, String) {
+pub fn parse_frontmatter(content: &str) -> (Option<String>, String) {
     let mut name = None;
     let mut description = String::new();
 
@@ -105,7 +104,7 @@ fn parse_frontmatter(content: &str) -> (Option<String>, String) {
     }
 
     let after_first = &content[3..];
-    let end = after_first.find("---").unwrap_or(return (None, description));
+    let Some(end) = after_first.find("---") else { return (None, description) };
     let fm = &after_first[..end];
 
     for line in fm.lines() {
@@ -191,7 +190,7 @@ pub struct SessionInfo {
     pub file_path: String,
 }
 
-/// 会话详情（用户点击时流式解析单个 JSONL）
+/// 会话详情（只返回统计信息，不含消息列表）
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionDetail {
     pub message_count: usize,
@@ -202,7 +201,6 @@ pub struct SessionDetail {
     pub tool_calls: Vec<ToolCallStat>,
     pub skill_calls: Vec<ToolCallStat>,
     pub agent_calls: Vec<ToolCallStat>,
-    pub messages: Vec<SessionMessage>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -259,294 +257,161 @@ pub fn list_projects() -> Result<Vec<ProjectInfo>, String> {
     Ok(projects)
 }
 
-/// 扫描项目下的会话列表（轻量：只读文件名 + 前几行快速提取标题/时间）
-/// 先增量同步 session_stats，再过滤 input_tokens == 0 的空会话
+/// 扫描项目下的会话列表（文件系统为主，DB 补充 title/tokens）
 #[tauri::command]
-pub fn list_sessions(project: String, state: tauri::State<'_, AppState>) -> Result<Vec<SessionInfo>, String> {
+pub fn list_sessions(
+    project: String,
+    limit: Option<usize>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<SessionInfo>, String> {
     let chats_dir = qwen_home().join("projects").join(&project).join("chats");
     if !chats_dir.is_dir() {
         return Ok(vec![]);
     }
 
-    // 先增量同步，确保 session_stats 数据是最新的（增量，跳过未变更文件）
-    {
-        let db = state.db.lock().map_err(|e| e.to_string())?;
-        let _ = super::analytics::sync_session_stats(&db);
-    }
-
-    // 查询该项目下 input_tokens == 0 的会话 ID
-    let zero_token_ids: HashSet<String> = {
-        let db = state.db.lock().map_err(|e| e.to_string())?;
-        let mut stmt = db
-            .prepare("SELECT session_id FROM session_stats WHERE project = ?1 AND input_tokens = 0")
-            .map_err(|e| e.to_string())?;
-        let mut ids = HashSet::new();
-        let mut rows = stmt.query(rusqlite::params![project]).map_err(|e| e.to_string())?;
-        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            let id: String = row.get(0).map_err(|e| e.to_string())?;
-            ids.insert(id);
-        }
-        ids
-    };
-
-    let mut sessions = Vec::new();
+    // 收集所有 JSONL 文件，按修改时间倒序
+    let mut entries: Vec<(std::path::PathBuf, std::time::SystemTime)> = Vec::new();
     for entry in fs::read_dir(&chats_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        if path.extension().map_or(true, |ext| ext != "jsonl") {
-            continue;
+        if path.extension().map_or(true, |ext| ext != "jsonl") { continue; }
+        let mtime = fs::metadata(&path).ok().and_then(|m| m.modified().ok()).unwrap_or(std::time::UNIX_EPOCH);
+        entries.push((path, mtime));
+    }
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let scan_limit = limit.unwrap_or(100);
+    let mut sessions = Vec::with_capacity(scan_limit.min(entries.len()));
+
+    // 尝试从 DB 补充 title/tokens（不阻塞，失败就用文件系统数据）
+    let db_cache: std::collections::HashMap<String, (String, i64)> = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let mut cache = std::collections::HashMap::new();
+        if let Ok(mut stmt) = db.prepare(
+            "SELECT session_id, COALESCE(title, ''), input_tokens FROM session_stats WHERE project = ?1"
+        ) {
+            if let Ok(rows) = stmt.query_map(rusqlite::params![project], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+            }) {
+                for row in rows.flatten() {
+                    cache.insert(row.0, (row.1, row.2));
+                }
+            }
         }
-        let id = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
+        cache
+    };
+
+    for (path, _) in entries.into_iter().take(scan_limit) {
+        let id = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+
+        // 从 DB 缓存获取 title/tokens
+        let (title, _input_tokens) = db_cache.get(&id)
+            .map(|(t, tok)| (t.clone(), *tok))
             .unwrap_or_default();
 
-        // 已同步且确认 input_tokens == 0 的会话，跳过
-        if zero_token_ids.contains(&id) {
-            continue;
-        }
-
-        let (title, started_at, msg_count) = quick_scan_header(&path);
+        // 如果 DB 没有 title，从文件快速提取
+        let title = if title.is_empty() {
+            quick_extract_title(&path)
+        } else { title };
 
         sessions.push(SessionInfo {
             id,
             title,
-            started_at,
-            message_count: msg_count,
+            started_at: String::new(), // 不阻塞，后续 stats-synced 事件补充
+            message_count: (file_size / 500).max(1) as usize, // 估算
             file_path: path.to_string_lossy().to_string(),
         });
     }
 
-    sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
     Ok(sessions)
 }
 
-/// 快速扫描前 20 行提取标题和起始时间，消息数用文件大小估算
-fn quick_scan_header(path: &std::path::Path) -> (String, String, usize) {
-    let file = match fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return (String::new(), String::new(), 0),
-    };
-    let est_count = fs::metadata(path)
-        .map(|m| (m.len() / 500).max(1) as usize)
-        .unwrap_or(1);
-
+/// 只读前几行提取标题（不做全量解析）
+fn quick_extract_title(path: &std::path::Path) -> String {
+    let file = match fs::File::open(path) { Ok(f) => f, Err(_) => return String::new() };
     let reader = BufReader::new(file);
-    let mut title = String::new();
-    let mut started_at = String::new();
-
     for line in reader.lines().take(20) {
         let line = match line { Ok(l) => l, Err(_) => continue };
-        let json: Value = match serde_json::from_str(&line) {
-            Ok(v) => v, Err(_) => continue,
-        };
-        if started_at.is_empty() {
-            if let Some(ts) = json.get("timestamp").and_then(|v| v.as_str()) {
-                started_at = ts.to_string();
-            }
-        }
+        let json: Value = match serde_json::from_str(&line) { Ok(v) => v, Err(_) => continue };
         let msg_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        if msg_type == "system"
-            && json.get("subtype").and_then(|v| v.as_str()) == Some("custom_title")
-        {
+        if msg_type == "system" && json.get("subtype").and_then(|v| v.as_str()) == Some("custom_title") {
             if let Some(t) = json.get("title").and_then(|v| v.as_str()) {
-                title = t.to_string();
+                return t.to_string();
             }
         }
-        if title.is_empty() && msg_type == "user" {
-            if let Some(text) = json.pointer("/message/parts/0/text").and_then(|v| v.as_str()) {
-                title = text.chars().take(80).collect();
+        if msg_type == "user" {
+            if let Some(text) = json.pointer("/message/parts").and_then(|v| v.as_array())
+                .and_then(|arr| arr.iter().find_map(|p| p.get("text").and_then(|v| v.as_str())))
+            {
+                return text.chars().take(80).collect();
             }
         }
     }
-    (title, started_at, est_count)
+    String::new()
 }
 
-/// 用户点击会话时触发：流式解析单个 JSONL，返回结构化消息列表 + 统计
+/// 从 DB 缓存读取会话统计详情（不解析 JSONL）
 #[tauri::command]
-pub fn get_session_detail(project: String, session_id: String) -> Result<SessionDetail, String> {
-    let path = qwen_home()
-        .join("projects")
-        .join(&project)
-        .join("chats")
-        .join(format!("{}.jsonl", session_id));
+pub fn get_session_detail(
+    project: String, session_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<SessionDetail, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let result = db.query_row(
+        "SELECT message_count, models, input_tokens, output_tokens, duration_ms,
+                tool_calls_json, skill_calls_json, agent_calls_json
+         FROM session_stats WHERE project = ?1 AND session_id = ?2",
+        rusqlite::params![project, session_id],
+        |row| {
+            let msg_count: i64 = row.get(0)?;
+            let models: String = row.get(1)?;
+            let inp: i64 = row.get(2)?;
+            let out: i64 = row.get(3)?;
+            let dur_ms: i64 = row.get(4)?;
+            let tool_json: String = row.get(5)?;
+            let skill_json: String = row.get(6)?;
+            let agent_json: String = row.get(7)?;
+            Ok((msg_count, models, inp, out, dur_ms, tool_json, skill_json, agent_json))
+        },
+    );
 
-    let file = fs::File::open(&path).map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
-
-    let mut messages = Vec::new();
-    let mut model_set = std::collections::HashSet::<String>::new();
-    let mut input_tokens = 0u64;
-    let mut output_tokens = 0u64;
-    let mut tool_map = std::collections::HashMap::<String, usize>::new();
-    let mut skill_map = std::collections::HashMap::<String, usize>::new();
-    let mut agent_map = std::collections::HashMap::<String, usize>::new();
-    let mut first_ts = String::new();
-    let mut last_ts = String::new();
-
-    for line in reader.lines() {
-        let line = match line { Ok(l) => l, Err(_) => continue };
-        let json: Value = match serde_json::from_str(&line) {
-            Ok(v) => v, Err(_) => continue,
-        };
-
-        let msg_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let uuid = json.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let timestamp = json.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").to_string();
-
-        if first_ts.is_empty() { first_ts = timestamp.clone(); }
-        if !timestamp.is_empty() { last_ts = timestamp.clone(); }
-
-        // 提取文本和 thinking
-        let mut text = String::new();
-        let mut thinking = None;
-        let mut has_tool_use = false;
-        let mut tool_name = None;
-        let mut tool_input_preview = None;
-        let mut msg_input_tokens = 0u64;
-        let mut msg_output_tokens = 0u64;
-        let mut model = None;
-
-        if msg_type == "assistant" {
-            model = json.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
-            if let Some(m) = &model { model_set.insert(m.clone()); }
-
-            if let Some(usage) = json.get("usageMetadata") {
-                msg_input_tokens = usage.get("promptTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
-                msg_output_tokens = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()).unwrap_or(0);
-                input_tokens += msg_input_tokens;
-                output_tokens += msg_output_tokens;
-            }
-
-            if let Some(parts) = json.pointer("/message/parts").and_then(|v| v.as_array()) {
-                for part in parts {
-                    if let Some(thought) = part.get("thought").and_then(|v| v.as_bool()) {
-                        if thought {
-                            if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
-                                thinking = Some(t.to_string());
-                            }
-                            continue;
-                        }
-                    }
-                    if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
-                        if !text.is_empty() { text.push('\n'); }
-                        text.push_str(t);
-                    }
-                    if part.get("functionCall").is_some() {
-                        has_tool_use = true;
-                        if let Some(name) = part.pointer("/functionCall/name").and_then(|v| v.as_str()) {
-                            tool_name = Some(name.to_string());
-                            match name {
-                                "skill" => {
-                                    if let Some(skill_name) = part.pointer("/functionCall/args/skill").and_then(|v| v.as_str()) {
-                                        *skill_map.entry(skill_name.to_string()).or_insert(0) += 1;
-                                    }
-                                }
-                                "agent" => {
-                                    let agent_type = part.pointer("/functionCall/args/subagent_type")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("general-purpose");
-                                    *agent_map.entry(agent_type.to_string()).or_insert(0) += 1;
-                                }
-                                _ => {
-                                    *tool_map.entry(name.to_string()).or_insert(0) += 1;
-                                }
-                            }
-                            // 提取输入预览
-                            if let Some(input) = part.pointer("/functionCall/input") {
-                                let preview = match input {
-                                    Value::Object(map) => {
-                                        if let Some(cmd) = map.get("command").and_then(|v| v.as_str()) {
-                                            format!("$ {}", cmd.chars().take(120).collect::<String>())
-                                        } else if let Some(fp) = map.get("file_path").or_else(|| map.get("path")).and_then(|v| v.as_str()) {
-                                            fp.to_string()
-                                        } else if let Some(desc) = map.get("description").and_then(|v| v.as_str()) {
-                                            desc.chars().take(100).collect()
-                                        } else {
-                                            serde_json::to_string(input).unwrap_or_default().chars().take(100).collect()
-                                        }
-                                    }
-                                    _ => serde_json::to_string(input).unwrap_or_default().chars().take(100).collect(),
-                                };
-                                tool_input_preview = Some(preview);
-                            }
-                        }
-                    }
-                }
-            }
-        } else if msg_type == "user" {
-            if let Some(parts) = json.pointer("/message/parts").and_then(|v| v.as_array()) {
-                for part in parts {
-                    if let Some(t) = part.get("text").and_then(|v| v.as_str()) {
-                        if !text.is_empty() { text.push('\n'); }
-                        text.push_str(t);
-                    }
-                }
-            }
-        } else if msg_type == "system" {
-            text = json.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        }
-
-        messages.push(SessionMessage {
-            uuid,
-            msg_type,
-            timestamp,
-            model,
-            text,
-            thinking,
-            has_tool_use,
-            tool_name,
-            tool_input_preview,
-            input_tokens: msg_input_tokens,
-            output_tokens: msg_output_tokens,
-        });
-    }
-
-    // 计算时长
-    let duration = if !first_ts.is_empty() && !last_ts.is_empty() {
-        let ms = chrono::NaiveDateTime::parse_from_str(&last_ts, "%Y-%m-%dT%H:%M:%S%.fZ")
-            .ok()
-            .and_then(|end| {
-                chrono::NaiveDateTime::parse_from_str(&first_ts, "%Y-%m-%dT%H:%M:%S%.fZ")
-                    .ok()
-                    .map(|start| (end - start).num_milliseconds().max(0))
+    match result {
+        Ok((msg_count, models, inp, out, dur_ms, tool_json, skill_json, agent_json)) => {
+            let duration = format_duration(dur_ms);
+            let tool_calls = parse_name_count_json(&tool_json);
+            let skill_calls = parse_name_count_json(&skill_json);
+            let agent_calls = parse_name_count_json(&agent_json);
+            Ok(SessionDetail {
+                message_count: msg_count as usize, models,
+                input_tokens: inp as u64, output_tokens: out as u64,
+                duration, tool_calls, skill_calls, agent_calls,
             })
-            .unwrap_or(0);
-        let mins = ms / 60000;
-        if mins >= 60 { format!("{}h {}m", mins / 60, mins % 60) } else { format!("{}m", mins) }
-    } else {
-        String::new()
-    };
+        }
+        Err(_) => {
+            // DB 无记录（尚未同步），返回空
+            Ok(SessionDetail {
+                message_count: 0, models: String::new(),
+                input_tokens: 0, output_tokens: 0,
+                duration: String::new(),
+                tool_calls: vec![], skill_calls: vec![], agent_calls: vec![],
+            })
+        }
+    }
+}
 
-    let mut models: Vec<String> = model_set.into_iter().collect();
-    models.sort();
+fn format_duration(ms: i64) -> String {
+    let mins = ms / 60000;
+    if mins >= 60 { format!("{}h {}m", mins / 60, mins % 60) } else { format!("{}m", mins) }
+}
 
-    let mut tool_calls: Vec<ToolCallStat> = tool_map.into_iter()
-        .map(|(name, count)| ToolCallStat { name, count })
-        .collect();
-    tool_calls.sort_by(|a, b| b.count.cmp(&a.count));
-
-    let mut skill_calls: Vec<ToolCallStat> = skill_map.into_iter()
-        .map(|(name, count)| ToolCallStat { name, count })
-        .collect();
-    skill_calls.sort_by(|a, b| b.count.cmp(&a.count));
-
-    let mut agent_calls: Vec<ToolCallStat> = agent_map.into_iter()
-        .map(|(name, count)| ToolCallStat { name, count })
-        .collect();
-    agent_calls.sort_by(|a, b| b.count.cmp(&a.count));
-
-    Ok(SessionDetail {
-        message_count: messages.len(),
-        models: models.join(", "),
-        input_tokens,
-        output_tokens,
-        duration,
-        tool_calls,
-        skill_calls,
-        agent_calls,
-        messages,
-    })
+fn parse_name_count_json(json_str: &str) -> Vec<ToolCallStat> {
+    let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(json_str) else { return vec![] };
+    arr.into_iter().filter_map(|item| {
+        let name = item.get("name")?.as_str()?.to_string();
+        let count = item.get("count")?.as_u64()? as usize;
+        Some(ToolCallStat { name, count })
+    }).collect()
 }
 
 /// 分页消息加载结果
@@ -558,7 +423,8 @@ pub struct PagedMessages {
     pub has_newer: bool,
 }
 
-/// 分页加载会话消息（支持从最新往前加载）
+/// 流式分页加载会话消息（不将全部行加载到内存）
+/// 从末尾取（最新消息优先）：先统计总行数，再只解析需要的切片
 #[tauri::command]
 pub fn get_session_messages_paged(
     project: String,
@@ -573,25 +439,55 @@ pub fn get_session_messages_paged(
         .join(format!("{}.jsonl", session_id));
 
     let file = fs::File::open(&path).map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
+    let mut reader = BufReader::new(file);
 
-    // 先全量解析所有消息（JSONL 必须顺序读取）
-    let all_messages: Vec<SessionMessage> = reader.lines()
-        .filter_map(|line| line.ok())
-        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
-        .filter_map(|json| parse_message(&json))
-        .collect();
+    // 第一遍：只数行数（不解析 JSON，只读字节）
+    let total = {
+        let mut count = 0usize;
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            match reader.read_line(&mut buf) {
+                Ok(0) => break,
+                Ok(_) => count += 1,
+                Err(_) => break,
+            }
+        }
+        count
+    };
 
-    let total = all_messages.len();
-    // 从末尾开始取（最新消息优先）
-    let rev_offset = total.saturating_sub(offset + limit);
+    // 计算需要的行范围（从末尾取）
+    let rev_start = total.saturating_sub(offset + limit);
     let rev_end = total.saturating_sub(offset);
-    let page: Vec<SessionMessage> = all_messages[rev_offset..rev_end].to_vec();
+
+    // 第二遍：只读取需要的行并解析
+    reader.rewind().map_err(|e| e.to_string())?;
+    let mut line_num = 0usize;
+    let mut messages = Vec::new();
+    let mut buf = String::new();
+    loop {
+        buf.clear();
+        match reader.read_line(&mut buf) {
+            Ok(0) => break,
+            Ok(_) => {
+                if line_num >= rev_start && line_num < rev_end {
+                    if let Ok(json) = serde_json::from_str::<Value>(&buf) {
+                        if let Some(msg) = parse_message(&json) {
+                            messages.push(msg);
+                        }
+                    }
+                }
+                line_num += 1;
+                if line_num >= rev_end { break; }
+            }
+            Err(_) => break,
+        }
+    }
 
     Ok(PagedMessages {
-        messages: page,
+        messages,
         total_count: total,
-        has_older: rev_offset > 0,
+        has_older: rev_start > 0,
         has_newer: offset > 0,
     })
 }
@@ -748,7 +644,7 @@ pub fn list_memories(project: Option<String>) -> Result<Vec<MemoryFile>, String>
     Ok(memories)
 }
 
-fn extract_frontmatter_field(content: &str, key: &str) -> Option<String> {
+pub fn extract_frontmatter_field(content: &str, key: &str) -> Option<String> {
     if !content.starts_with("---") {
         return None;
     }
@@ -768,7 +664,7 @@ fn extract_frontmatter_field(content: &str, key: &str) -> Option<String> {
 #[tauri::command]
 pub fn read_memory(path: String) -> Result<Value, String> {
     let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let (fm_end, fm, body) = split_frontmatter(&content);
+    let (_fm_end, fm, body) = split_frontmatter(&content);
     Ok(json!({
         "frontmatter": fm,
         "content": body,
@@ -1052,96 +948,45 @@ pub struct ProjectIndex {
     pub latest_session: Option<String>,
 }
 
-/// 一次性返回全局记忆 + 所有项目的索引统计（避免前端多次 IPC）
-/// 先增量同步 session_stats，再过滤掉所有会话 input_tokens 均为 0 的项目
+/// 扫描文件系统返回项目列表 + 全局记忆（不依赖 DB，即时返回）
 #[tauri::command]
-pub fn get_index(state: tauri::State<'_, AppState>) -> Result<GlobalIndex, String> {
+pub fn get_index(state: tauri::State<'_, AppState>, limit: Option<usize>, offset: Option<usize>) -> Result<GlobalIndex, String> {
+    let global_memories = state.global_memory_cache.lock().unwrap().clone();
     let qwen = qwen_home();
-
-    // 先增量同步 session_stats（增量，跳过未变更文件，首次后几乎无开销）
-    {
-        let db = state.db.lock().map_err(|e| e.to_string())?;
-        let _ = super::analytics::sync_session_stats(&db);
-    }
-
-    // 查询有非零 token 会话的项目集合
-    let projects_with_tokens: HashSet<String> = {
-        let db = state.db.lock().map_err(|e| e.to_string())?;
-        let mut stmt = db
-            .prepare("SELECT DISTINCT project FROM session_stats WHERE input_tokens > 0")
-            .map_err(|e| e.to_string())?;
-        let mut set = HashSet::new();
-        let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
-        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            let name: String = row.get(0).map_err(|e| e.to_string())?;
-            set.insert(name);
-        }
-        set
-    };
-
-    // 全局记忆
-    let mut global_memories = Vec::new();
-    if qwen.is_dir() {
-        for entry in fs::read_dir(&qwen).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            if !path.is_file() || path.extension().map_or(true, |ext| ext != "md") {
-                continue;
-            }
-            if path.file_name().map_or(false, |n| n == "MEMORY.md") {
-                continue;
-            }
-            let content = fs::read_to_string(&path).unwrap_or_default();
-            let (name, desc) = parse_frontmatter(&content);
-            let mem_type = extract_frontmatter_field(&content, "type");
-            global_memories.push(MemoryFile {
-                name: name.unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()),
-                memory_type: mem_type.unwrap_or_else(|| "unknown".into()),
-                description: desc,
-                path: path.to_string_lossy().to_string(),
-            });
-        }
-    }
-
-    // 项目索引
-    let mut projects = Vec::new();
     let projects_dir = qwen.join("projects");
+
+    let mut all_projects: Vec<ProjectIndex> = Vec::new();
     if projects_dir.is_dir() {
         for entry in fs::read_dir(&projects_dir).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
-            if !entry.path().is_dir() {
-                continue;
-            }
+            if !entry.path().is_dir() { continue; }
             let name = entry.file_name().to_string_lossy().to_string();
 
-            // 同步后该项目没有任何非零 token 的会话，跳过
-            if !projects_with_tokens.contains(&name) {
-                continue;
-            }
-
-            // 会话统计
+            // 会话：扫描 chats/ 目录下的 JSONL 文件
             let chats_dir = entry.path().join("chats");
-            let (session_count, latest_session) = if chats_dir.is_dir() {
-                let mut sessions: Vec<(String, std::time::SystemTime)> = Vec::new();
+            let (session_count, latest_mtime) = if chats_dir.is_dir() {
+                let mut count = 0usize;
+                let mut latest = std::time::UNIX_EPOCH;
                 for c in fs::read_dir(&chats_dir).map_err(|e| e.to_string())? {
                     let c = c.map_err(|e| e.to_string())?;
                     let p = c.path();
                     if p.extension().map_or(false, |ext| ext == "jsonl") {
-                        let meta = fs::metadata(&p).ok();
-                        let mtime = meta.and_then(|m| m.modified().ok());
-                        if let Some(t) = mtime {
-                            sessions.push((p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(), t));
+                        count += 1;
+                        if let Ok(meta) = fs::metadata(&p) {
+                            if let Ok(t) = meta.modified() {
+                                if t > latest { latest = t; }
+                            }
                         }
                     }
                 }
-                sessions.sort_by(|a, b| b.1.cmp(&a.1));
-                let latest = sessions.first().map(|s| s.0.clone());
-                (sessions.len(), latest)
+                (count, latest)
             } else {
-                (0, None)
+                (0, std::time::UNIX_EPOCH)
             };
 
-            // 记忆统计（排除 MEMORY.md，与 list_memories 保持一致）
+            if session_count == 0 { continue; }
+
+            // 记忆：扫描 memory/ 目录
             let memory_dir = entry.path().join("memory");
             let memory_count = if memory_dir.is_dir() {
                 fs::read_dir(&memory_dir)
@@ -1153,21 +998,42 @@ pub fn get_index(state: tauri::State<'_, AppState>) -> Result<GlobalIndex, Strin
                         }).unwrap_or(false)
                     }).count())
                     .unwrap_or(0)
-            } else {
-                0
-            };
+            } else { 0 };
 
-            projects.push(ProjectIndex {
-                name,
-                session_count,
-                memory_count,
-                latest_session,
-            });
+            // 最新会话 ID
+            let latest_session = if latest_mtime > std::time::UNIX_EPOCH {
+                // 找到最新文件的 session ID
+                let mut newest_id = String::new();
+                let mut newest_time = std::time::UNIX_EPOCH;
+                if let Ok(rd) = fs::read_dir(&chats_dir) {
+                    for c in rd.flatten() {
+                        let p = c.path();
+                        if p.extension().map_or(false, |ext| ext == "jsonl") {
+                            if let Ok(t) = fs::metadata(&p).and_then(|m| m.modified()) {
+                                if t >= newest_time {
+                                    newest_time = t;
+                                    newest_id = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                                }
+                            }
+                        }
+                    }
+                }
+                if newest_id.is_empty() { None } else { Some(newest_id) }
+            } else { None };
+
+            all_projects.push(ProjectIndex { name, session_count, memory_count, latest_session });
         }
     }
 
-    Ok(GlobalIndex {
-        memories: global_memories,
-        projects,
-    })
+    // 按最新会话时间排序
+    // 用 latest_session 字段排序（session ID 就是 UUID，但文件系统 mtime 更准）
+    // 简化：直接按目录名排序，前端刷新时会更新
+    all_projects.sort_by(|a, b| b.session_count.cmp(&a.session_count));
+
+    // 分页
+    let off = offset.unwrap_or(0);
+    let lim = limit.unwrap_or(20);
+    let projects: Vec<ProjectIndex> = all_projects.into_iter().skip(off).take(lim).collect();
+
+    Ok(GlobalIndex { memories: global_memories, projects })
 }

@@ -51,6 +51,8 @@ export interface GenericThreeColumnPanelProps {
   onItemClick?: (itemId: string) => boolean;
   /** 设置此值可触发指定分组重新加载（折叠后重新展开）；值变化时触发 */
   reloadGroupId?: string | null;
+  /** 值变化时触发整个列表重新加载（用于后台数据更新后刷新） */
+  refreshKey?: number;
 }
 
 // ── 通用三栏面板 ─────────────────────────────────────────
@@ -70,6 +72,7 @@ export function GenericThreeColumnPanel({
   onSelect,
   onItemClick,
   reloadGroupId,
+  refreshKey,
 }: GenericThreeColumnPanelProps) {
   const [items, setItems] = useState<ListItem[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -92,6 +95,9 @@ export function GenericThreeColumnPanel({
   }, [loadItems]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // refreshKey 变化时触发重新加载
+  useEffect(() => { if (refreshKey !== undefined) refresh(); }, [refreshKey]);
 
   const handleSelect = (id: string) => {
     setSelected(id);
@@ -195,9 +201,13 @@ export function GenericThreeColumnPanel({
             {/* 列表 */}
             <div className="flex-1 overflow-auto py-0.5">
               {loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 size={16} className="text-[var(--text-muted)] animate-spin" />
-                </div>
+                // 骨架屏：5 行占位条，不阻塞中栏/右栏渲染
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="px-3 py-2">
+                    <div className="h-3 bg-[var(--border)] rounded animate-pulse mb-1.5" style={{ width: `${60 + (i % 3) * 12}%` }} />
+                    <div className="h-2 bg-[var(--border)] rounded animate-pulse opacity-50" style={{ width: `${30 + (i % 4) * 10}%` }} />
+                  </div>
+                ))
               ) : filtered.length === 0 ? (
                 <p className="px-3 py-4 text-xs text-[var(--text-muted)]">
                   {searchQuery ? "无匹配结果" : "暂无数据"}

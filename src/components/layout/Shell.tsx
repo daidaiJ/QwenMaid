@@ -30,7 +30,11 @@ const panels: Record<PanelId, React.LazyExoticComponent<React.FC>> = {
       default: m.SkillsPanel,
     }))
   ),
-  search: lazy(() => Promise.resolve({ default: () => <Placeholder text="搜索" /> })),
+  search: lazy(() =>
+    import("@/components/search/SearchPanel").then((m) => ({
+      default: m.SearchPanel,
+    }))
+  ),
   memory: lazy(() =>
     import("@/components/memory/MemoryPanel").then((m) => ({
       default: m.MemoryPanel,

@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 pub mod analytics;
 pub mod filesystem;
 pub mod installer;
@@ -7,14 +9,17 @@ pub mod skill_marketplace;
 use rusqlite::Connection;
 use serde_json::{json, Map, Value};
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 use crate::config;
 use crate::db::providers::{self, CreateModel, CreateProvider, Model, Provider, UpdateModel, UpdateProvider};
-use crate::presets;
+use crate::mcp;
 
 /// Tauri 命令共享状态
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
+    pub mcp_shutdown: Arc<Mutex<Option<tokio::sync::watch::Sender<bool>>>>,
+    pub global_memory_cache: Arc<Mutex<Vec<filesystem::MemoryFile>>>,
 }
 
 // ── Provider Commands ────────────────────────────────────
@@ -342,13 +347,22 @@ pub fn sync_session_stats(state: tauri::State<'_, AppState>) -> Result<usize, St
     analytics::sync_session_stats(&db)
 }
 
-/// 获取全局分析汇总（从 SQLite 读取，不触发解析）
+/// 获取全局分析汇总（纯 SQL 聚合，不触发 JSONL 解析，不含 top 排行）
 #[tauri::command]
 pub fn get_analytics_summary(
     state: tauri::State<'_, AppState>,
 ) -> Result<analytics::AnalyticsSummary, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     analytics::get_analytics_summary(&db)
+}
+
+/// 按需加载 top 工具/技能/智能体排行（较重，前端懒加载）
+#[tauri::command]
+pub fn get_analytics_top_items(
+    state: tauri::State<'_, AppState>,
+) -> Result<analytics::AnalyticsTopItems, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    analytics::get_analytics_top_items(&db)
 }
 
 // ── Skill Marketplace Commands ───────────────────────────
@@ -375,4 +389,156 @@ pub async fn install_skill_from_repo(
 #[tauri::command]
 pub fn uninstall_skill(name: String) -> Result<(), String> {
     skill_marketplace::uninstall_skill(&name)
+}
+
+// ── MCP Commands ─────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_mcp_config(state: tauri::State<'_, AppState>) -> Result<mcp::McpConfig, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    mcp::get_config(&db)
+}
+
+#[tauri::command]
+pub fn save_mcp_config(
+    state: tauri::State<'_, AppState>,
+    port: u16,
+    auto_inject: bool,
+    smartsearch_enabled: bool,
+    academicsearch_enabled: bool,
+    cleanfetch_enabled: bool,
+    search_mode: String,
+    tavily_api_key: Option<String>,
+    jina_api_key: Option<String>,
+    proxy_url: Option<String>,
+) -> Result<(), String> {
+    let config = mcp::McpConfig {
+        port,
+        auto_inject,
+        smartsearch_enabled,
+        academicsearch_enabled,
+        cleanfetch_enabled,
+        search_mode,
+        tavily_api_key,
+        jina_api_key,
+        proxy_url,
+    };
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    mcp::save_config(&db, &config)?;
+    drop(db);
+
+    // 处理自动注入
+    update_mcp_auto_inject(port, auto_inject)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn restart_mcp_server(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    // 停止当前服务器
+    {
+        let mut handle = state.mcp_shutdown.lock().map_err(|e| e.to_string())?;
+        if let Some(tx) = handle.take() {
+            let _ = tx.send(true);
+        }
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    // 启动新服务器
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    {
+        let mut handle = state.mcp_shutdown.lock().map_err(|e| e.to_string())?;
+        *handle = Some(tx);
+    }
+
+    let db = state.db.clone();
+    tokio::spawn(async move {
+        if let Err(e) = mcp::start_mcp_server(db, rx).await {
+            log::error!("MCP server failed: {}", e);
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_mcp_stats(state: tauri::State<'_, AppState>) -> Result<mcp::McpStats, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    mcp::get_stats(&db)
+}
+
+/// 更新 Qwen Code settings.json 中的 mcpServers.websearch 配置
+fn update_mcp_auto_inject(port: u16, enable: bool) -> Result<(), String> {
+    let settings_path = config::user_settings_path();
+    let mut settings = if settings_path.exists() {
+        config::read_settings(&settings_path)?
+    } else {
+        json!({})
+    };
+
+    if enable {
+        config::set_by_path(
+            &mut settings,
+            "mcpServers.websearch",
+            json!({
+                "type": "http",
+                "url": format!("http://localhost:{}/mcp", port)
+            }),
+        );
+    } else {
+        config::set_by_path(&mut settings, "mcpServers.websearch", Value::Null);
+    }
+
+    config::write_settings(&settings_path, &settings)
+}
+
+/// 注入状态行成本追踪配置到 Qwen Code settings.json
+#[tauri::command]
+pub fn inject_statusline(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+    let cmd_path = resource_dir.join("cli").join("statusline.cmd");
+
+    if !cmd_path.exists() {
+        return Err(format!("statusline.cmd not found at {:?}", cmd_path));
+    }
+
+    let settings_path = config::user_settings_path();
+    let mut settings = if settings_path.exists() {
+        config::read_settings(&settings_path)?
+    } else {
+        json!({})
+    };
+
+    let command_str = format!("cmd /c \"{}\"", cmd_path.to_string_lossy().replace('/', "\\"));
+    config::set_by_path(
+        &mut settings,
+        "statusLine",
+        json!({
+            "type": "command",
+            "command": command_str
+        }),
+    );
+
+    config::write_settings(&settings_path, &settings)
+}
+
+/// 移除状态行配置
+#[tauri::command]
+pub fn remove_statusline() -> Result<(), String> {
+    let settings_path = config::user_settings_path();
+    let mut settings = if settings_path.exists() {
+        config::read_settings(&settings_path)?
+    } else {
+        json!({})
+    };
+
+    config::set_by_path(&mut settings, "statusLine", Value::Null);
+    config::write_settings(&settings_path, &settings)
 }
