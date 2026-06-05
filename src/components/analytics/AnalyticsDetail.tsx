@@ -1,34 +1,32 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { getModelDetailStats, checkUsageDb } from "@/lib/tauri";
-import type { ModelDetailData, UsageDbInfo } from "@/lib/tauri";
-import { Loader2, Cpu, Zap } from "lucide-react";
+import { getModelDetailStats, getProxyDetailStats } from "@/lib/tauri";
+import type { ModelDetailData } from "@/lib/tauri";
+import { Loader2, Cpu, Zap, Server } from "lucide-react";
+
+type DataSource = "usage" | "proxy";
 
 export function AnalyticsDetail() {
   const [data, setData] = useState<ModelDetailData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [dbInfo, setDbInfo] = useState<UsageDbInfo | null>(null);
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [days, setDays] = useState(30);
-  const [granularity, setGranularity] = useState<"day" | "week">("day");
+  const [source, setSource] = useState<DataSource>("usage");
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    // 仅首次加载显示全屏 spinner，Tab 切换时保留旧数据
+    if (isInitialLoad) setLoading(true);
     try {
-      const [d, info] = await Promise.all([
-        getModelDetailStats(days),
-        checkUsageDb(),
-      ]);
+      const d = await (source === "proxy" ? getProxyDetailStats(days) : getModelDetailStats(days));
       setData(d);
-      setDbInfo(info);
       setSelectedModels(new Set(d.models.map((m) => m.model)));
-    } catch (e) {
-      setError(String(e));
+    } catch {
+      // 查询失败时 data 保持旧值，右侧面板显示空状态占位
     } finally {
       setLoading(false);
+      setIsInitialLoad(false);
     }
-  }, [days]);
+  }, [days, source, isInitialLoad]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -55,7 +53,7 @@ export function AnalyticsDetail() {
     return data.daily.filter((d) => selectedModels.has(d.model));
   }, [data, selectedModels]);
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 size={20} className="animate-spin text-[var(--text-muted)]" />
@@ -63,75 +61,76 @@ export function AnalyticsDetail() {
     );
   }
 
-  if (!data || data.models.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-[var(--text-muted)]">
-        <Zap size={28} className="opacity-30" />
-        <span className="text-sm">暂无模型详情数据</span>
-        {error && <span className="text-[11px] text-[var(--color-error)]">错误: {error}</span>}
-        {dbInfo && (
-          <div className="text-[10px] font-mono bg-[var(--bg-sidebar)] border border-[var(--border)] rounded p-3 max-w-md space-y-1">
-            <div>usage.db: {dbInfo.exists ? "✓ 存在" : "✗ 不存在"}</div>
-            <div>表: {dbInfo.tables.length > 0 ? dbInfo.tables.join(", ") : "无"}</div>
-            {dbInfo.call_records_columns.length > 0 && (
-              <>
-                <div>call_records 列: {dbInfo.call_records_columns.join(", ")}</div>
-                <div>call_records 行数: {dbInfo.call_records_count}</div>
-              </>
-            )}
-            {dbInfo.sample_row && (
-              <details>
-                <summary className="cursor-pointer text-[var(--accent)]">查看样本行</summary>
-                <pre className="mt-1 text-[9px] whitespace-pre-wrap">{dbInfo.sample_row}</pre>
-              </details>
-            )}
-          </div>
-        )}
-        <div className="text-[11px] text-center max-w-xs space-y-1">
-          <p>详情页需要代理层数据或 usage.db 中的 call_records 表</p>
-        </div>
-      </div>
-    );
-  }
-
-  const summaryStats = computeSummary(data.models.filter((m) => selectedModels.has(m.model)));
+  const hasData = data && data.models.length > 0;
+  const summaryStats = hasData ? computeSummary(data.models.filter((m) => selectedModels.has(m.model))) : null;
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* 左栏：模型选择 + 控制 */}
+      {/* 左栏：数据源切换 + 模型选择 + 控制（始终渲染，保持 Tab 可切换） */}
       <div className="w-[220px] shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col">
-        <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">模型选择</span>
-          <button onClick={toggleAll} className="text-[10px] text-[var(--accent)] hover:underline">
-            {selectedModels.size === data.models.length ? "全不选" : "全选"}
+        {/* 数据源切换 Tab */}
+        <div className="flex border-b border-[var(--border)]">
+          <button
+            onClick={() => setSource("usage")}
+            className={`flex-1 flex items-center justify-center gap-1.5 h-8 text-[11px] font-medium transition-colors ${
+              source === "usage"
+                ? "text-[var(--accent)] border-b-2 border-[var(--accent)] bg-[var(--accent-light)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            }`}
+          >
+            <Zap size={12} />
+            状态行 usage
+          </button>
+          <button
+            onClick={() => setSource("proxy")}
+            className={`flex-1 flex items-center justify-center gap-1.5 h-8 text-[11px] font-medium transition-colors ${
+              source === "proxy"
+                ? "text-[var(--accent)] border-b-2 border-[var(--accent)] bg-[var(--accent-light)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            }`}
+          >
+            <Server size={12} />
+            本地路由代理
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto py-1">
-          {data.models.map((m) => (
-            <div
-              key={m.model}
-              onClick={() => toggleModel(m.model)}
-              className="flex items-start gap-2 px-3 py-1.5 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
-            >
-              <input
-                type="checkbox"
-                checked={selectedModels.has(m.model)}
-                onChange={() => toggleModel(m.model)}
-                className="mt-0.5 accent-[var(--accent)]"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="text-[11px] font-mono text-[var(--text-primary)] truncate">{shortModel(m.model)}</div>
-                <div className="text-[9px] text-[var(--text-muted)]">
-                  {m.total_requests.toLocaleString()} req · {fmtTok(m.total_input + m.total_output)}
-                </div>
-              </div>
+        {hasData && (
+          <>
+            <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">模型选择</span>
+              <button onClick={toggleAll} className="text-[10px] text-[var(--accent)] hover:underline">
+                {selectedModels.size === data.models.length ? "全不选" : "全选"}
+              </button>
             </div>
-          ))}
-        </div>
+
+            <div className="flex-1 overflow-auto py-1">
+              {data.models.map((m) => (
+                <div
+                  key={m.model}
+                  onClick={() => toggleModel(m.model)}
+                  className="flex items-start gap-2 px-3 py-1.5 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedModels.has(m.model)}
+                    onChange={() => toggleModel(m.model)}
+                    className="mt-0.5 accent-[var(--accent)]"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-mono text-[var(--text-primary)] truncate">{shortModel(m.model)}</div>
+                    <div className="text-[9px] text-[var(--text-muted)]">
+                      {m.total_requests.toLocaleString()} req · {fmtTok(m.total_input + m.total_output)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="border-t border-[var(--border)] p-2 space-y-2">
           <select
+            id="detail-days"
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
             className="w-full h-7 text-[11px] bg-[var(--bg-input)] border border-[var(--border)] rounded px-2 text-[var(--text-primary)]"
@@ -142,14 +141,6 @@ export function AnalyticsDetail() {
             <option value={60}>最近 60 天</option>
             <option value={90}>最近 90 天</option>
           </select>
-          <div className="flex gap-3 text-[10px]">
-            <label className="flex items-center gap-1 cursor-pointer text-[var(--text-muted)]">
-              <input type="radio" name="gran" checked={granularity === "day"} onChange={() => setGranularity("day")} className="accent-[var(--accent)]" /> 日
-            </label>
-            <label className="flex items-center gap-1 cursor-pointer text-[var(--text-muted)]">
-              <input type="radio" name="gran" checked={granularity === "week"} onChange={() => setGranularity("week")} className="accent-[var(--accent)]" /> 周
-            </label>
-          </div>
         </div>
       </div>
 
@@ -162,7 +153,11 @@ export function AnalyticsDetail() {
             <span className="text-[12px] font-medium text-[var(--text-primary)]">Token 用量趋势</span>
           </div>
           <div className="px-4 py-3">
-            <TokenAreaChart daily={filteredDaily} selectedModels={selectedModels} granularity={granularity} />
+            {hasData ? (
+              <TokenAreaChart daily={filteredDaily} selectedModels={selectedModels} />
+            ) : (
+              <EmptyChartPlaceholder message={source === "proxy" ? "无代理请求记录" : "暂无模型详情数据"} />
+            )}
           </div>
         </div>
 
@@ -173,23 +168,39 @@ export function AnalyticsDetail() {
             <span className="text-[12px] font-medium text-[var(--text-primary)]">性能指标</span>
           </div>
           <div className="px-4 py-3">
-            <PerfLineChart
-              daily={filteredDaily}
-              selectedModels={selectedModels}
-              granularity={granularity}
-              hasPerfData={data.models.some((m) => m.avg_tps > 0)}
-            />
+            {hasData ? (
+              <PerfLineChart
+                daily={filteredDaily}
+                selectedModels={selectedModels}
+                hasPerfData={data.models.some((m) => m.avg_tps > 0)}
+              />
+            ) : (
+              <EmptyChartPlaceholder message={source === "proxy" ? "无代理请求记录" : "暂无模型详情数据"} />
+            )}
           </div>
         </div>
 
         {/* 汇总统计卡片 */}
         <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-          <MiniStat label="总请求" value={summaryStats.totalRequests.toLocaleString()} color="#58a6ff" />
-          <MiniStat label="总 Token" value={fmtTok(summaryStats.totalTokens)} color="#d29922" />
-          <MiniStat label="缓存率" value={`${(summaryStats.cacheRate * 100).toFixed(1)}%`} color="#bc8cff" />
-          <MiniStat label="平均 TPS" value={summaryStats.avgTps.toFixed(1)} color="#d29922" />
-          <MiniStat label="P50 延迟" value={`${summaryStats.p50Latency.toFixed(0)}ms`} color="#3fb950" />
-          <MiniStat label="P95 延迟" value={`${summaryStats.p95Latency.toFixed(0)}ms`} color="#f48771" />
+          {hasData ? (
+            <>
+              <MiniStat label="总请求" value={summaryStats!.totalRequests.toLocaleString()} color="#58a6ff" />
+              <MiniStat label="总 Token" value={fmtTok(summaryStats!.totalTokens)} color="#d29922" />
+              <MiniStat label="缓存率" value={`${(summaryStats!.cacheRate * 100).toFixed(1)}%`} color="#bc8cff" />
+              <MiniStat label="平均 TPS" value={summaryStats!.avgTps.toFixed(1)} color="#d29922" />
+              <MiniStat label="P50 延迟" value={`${summaryStats!.p50Latency.toFixed(0)}ms`} color="#3fb950" />
+              <MiniStat label="P95 延迟" value={`${summaryStats!.p95Latency.toFixed(0)}ms`} color="#f48771" />
+            </>
+          ) : (
+            <>
+              <MiniStat label="总请求" value="--" color="#58a6ff" />
+              <MiniStat label="总 Token" value="--" color="#d29922" />
+              <MiniStat label="缓存率" value="--" color="#bc8cff" />
+              <MiniStat label="平均 TPS" value="--" color="#d29922" />
+              <MiniStat label="P50 延迟" value="--" color="#3fb950" />
+              <MiniStat label="P95 延迟" value="--" color="#f48771" />
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -204,10 +215,9 @@ const TOKEN_LINES = [
   { key: "cache_read", label: "缓存", color: "#bc8cff" },
 ];
 
-function TokenAreaChart({ daily, selectedModels, granularity }: {
+function TokenAreaChart({ daily, selectedModels }: {
   daily: import("@/lib/tauri").ModelDailyDetail[];
   selectedModels: Set<string>;
-  granularity: "day" | "week";
 }) {
   const [visibleLines, setVisibleLines] = useState<Set<string>>(
     new Set(TOKEN_LINES.map((l) => l.key))
@@ -220,29 +230,8 @@ function TokenAreaChart({ daily, selectedModels, granularity }: {
     });
   };
 
-  const aggregated = useMemo(() => {
-    if (granularity === "week") {
-      const map = new Map<string, import("@/lib/tauri").ModelDailyDetail>();
-      for (const d of daily) {
-        const weekStart = getWeekStart(d.date);
-        const key = `${weekStart}::${d.model}`;
-        const existing = map.get(key);
-        if (existing) {
-          existing.output_tokens += d.output_tokens;
-          existing.cache_read += d.cache_read;
-          existing.uncached_input += d.uncached_input;
-          existing.input_tokens += d.input_tokens;
-        } else {
-          map.set(key, { ...d, date: weekStart });
-        }
-      }
-      return [...map.values()];
-    }
-    return daily;
-  }, [daily, granularity]);
-
-  const dates = useMemo(() => [...new Set(aggregated.map((d) => d.date))].sort(), [aggregated]);
-  const models = [...selectedModels].filter((m) => aggregated.some((d) => d.model === m));
+  const dates = useMemo(() => [...new Set(daily.map((d) => d.date))].sort(), [daily]);
+  const models = [...selectedModels].filter((m) => daily.some((d) => d.model === m));
 
   if (dates.length < 2) return <div className="text-[11px] text-[var(--text-muted)] text-center py-4">数据不足</div>;
 
@@ -250,7 +239,7 @@ function TokenAreaChart({ daily, selectedModels, granularity }: {
   const plotW = W - PL - PR, plotH = H - PT - PB;
 
   let maxY = 0;
-  for (const d of aggregated) {
+  for (const d of daily) {
     for (const line of TOKEN_LINES) {
       if (visibleLines.has(line.key)) {
         const val = (d as any)[line.key] ?? 0;
@@ -276,12 +265,12 @@ function TokenAreaChart({ daily, selectedModels, granularity }: {
           </g>;
         })}
         {dates.map((d, i) => i % labelEvery === 0 ? (
-          <text key={d} x={xPos(i)} y={H - PB + 12} textAnchor="middle" fill="var(--text-muted)" fontSize={7}>{d.slice(5)}</text>
+          <text key={d} x={xPos(i)} y={H - PB + 12} textAnchor="middle" fill="var(--text-muted)" fontSize={7}>{fmtAxisLabel(d)}</text>
         ) : null)}
         {TOKEN_LINES.filter((l) => visibleLines.has(l.key)).map((line) => {
           return models.map((model) => {
             const pts = dates.map((d, i) => {
-              const dd = aggregated.find((a) => a.date === d && a.model === model);
+              const dd = daily.find((a) => a.date === d && a.model === model);
               return { x: xPos(i), y: yPos((dd as any)?.[line.key] ?? 0) };
             });
             return (
@@ -319,10 +308,9 @@ const PERF_LINES = [
   { key: "p95_latency", label: "P95", color: "#f48771", axis: "right" as const },
 ];
 
-function PerfLineChart({ daily, selectedModels, granularity, hasPerfData }: {
+function PerfLineChart({ daily, selectedModels, hasPerfData }: {
   daily: import("@/lib/tauri").ModelDailyDetail[];
   selectedModels: Set<string>;
-  granularity: "day" | "week";
   hasPerfData: boolean;
 }) {
   const [visibleLines, setVisibleLines] = useState<Set<string>>(new Set(PERF_LINES.map((l) => l.key)));
@@ -335,29 +323,8 @@ function PerfLineChart({ daily, selectedModels, granularity, hasPerfData }: {
     });
   };
 
-  const aggregated = useMemo(() => {
-    if (granularity === "week") {
-      const map = new Map<string, import("@/lib/tauri").ModelDailyDetail>();
-      for (const d of daily) {
-        const weekStart = getWeekStart(d.date);
-        const key = `${weekStart}::${d.model}`;
-        const existing = map.get(key);
-        if (existing) {
-          existing.avg_tps = (existing.avg_tps + d.avg_tps) / 2;
-          existing.avg_latency = (existing.avg_latency + d.avg_latency) / 2;
-          existing.p50_latency = Math.max(existing.p50_latency, d.p50_latency);
-          existing.p95_latency = Math.max(existing.p95_latency, d.p95_latency);
-        } else {
-          map.set(key, { ...d, date: weekStart });
-        }
-      }
-      return [...map.values()];
-    }
-    return daily;
-  }, [daily, granularity]);
-
-  const dates = useMemo(() => [...new Set(aggregated.map((d) => d.date))].sort(), [aggregated]);
-  const models = [...selectedModels].filter((m) => aggregated.some((d) => d.model === m));
+  const dates = useMemo(() => [...new Set(daily.map((d) => d.date))].sort(), [daily]);
+  const models = [...selectedModels].filter((m) => daily.some((d) => d.model === m));
 
   if (!hasPerfData) {
     return (
@@ -374,7 +341,7 @@ function PerfLineChart({ daily, selectedModels, granularity, hasPerfData }: {
   const plotW = W - PL - PR, plotH = H - PT - PB;
 
   let maxLeft = 0, maxRight = 0;
-  for (const d of aggregated) {
+  for (const d of daily) {
     if (visibleLines.has("avg_tps") && d.avg_tps > maxLeft) maxLeft = d.avg_tps;
     for (const key of ["avg_latency", "p50_latency", "p95_latency"]) {
       const val = (d as any)[key] ?? 0;
@@ -404,13 +371,13 @@ function PerfLineChart({ daily, selectedModels, granularity, hasPerfData }: {
           <text key={`r${r}`} x={W - PR + 4} y={yRight(r * maxRight) + 3} fill="#58a6ff" fontSize={7}>{(r * maxRight).toFixed(0)}ms</text>
         ))}
         {dates.map((d, i) => i % labelEvery === 0 ? (
-          <text key={d} x={xPos(i)} y={H - PB + 12} textAnchor="middle" fill="var(--text-muted)" fontSize={7}>{d.slice(5)}</text>
+          <text key={d} x={xPos(i)} y={H - PB + 12} textAnchor="middle" fill="var(--text-muted)" fontSize={7}>{fmtAxisLabel(d)}</text>
         ) : null)}
         {PERF_LINES.filter((l) => visibleLines.has(l.key)).map((line) => {
           const yFn = line.axis === "left" ? yLeft : yRight;
           return models.map((model) => {
             const points = dates.map((d, i) => {
-              const dd = aggregated.find((a) => a.date === d && a.model === model);
+              const dd = daily.find((a) => a.date === d && a.model === model);
               const val = dd ? (dd as any)[line.key] ?? 0 : 0;
               return { x: xPos(i), y: yFn(val) };
             });
@@ -446,6 +413,15 @@ function MiniStat({ label, value, color }: { label: string; value: string; color
   );
 }
 
+function EmptyChartPlaceholder({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-[160px] gap-2 text-[var(--text-muted)]">
+      <Zap size={20} className="opacity-20" />
+      <span className="text-[11px]">{message}</span>
+    </div>
+  );
+}
+
 // ── 工具函数 ─────────────────────────────────────────────
 
 function shortModel(model: string): string {
@@ -458,11 +434,9 @@ function fmtTok(n: number): string {
   return `${n}`;
 }
 
-function getWeekStart(dateStr: string): string {
-  const d = new Date(dateStr);
-  const day = d.getDay();
-  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-  return d.toISOString().slice(0, 10);
+/** 格式化 X 轴标签："YYYY-MM-DD HH:MM" → "MM-DD HH:MM" */
+function fmtAxisLabel(dateStr: string): string {
+  return dateStr.slice(5);
 }
 
 function computeSummary(models: import("@/lib/tauri").ModelMeta[]) {

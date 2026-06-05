@@ -490,6 +490,7 @@ mod tests {
                 auth_header: None,
                 api_key_value: None,
                 billing_type: Some("pay_per_use".into()),
+                compress_enabled: None,
             },
         )
         .unwrap();
@@ -532,6 +533,7 @@ mod tests {
                 auth_header: None,
                 api_key_value: None,
                 billing_type: Some("pay_per_use".into()),
+                compress_enabled: None,
             },
         )
         .unwrap();

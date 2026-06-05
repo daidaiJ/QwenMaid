@@ -4,6 +4,7 @@ pub mod db;
 pub mod mcp;
 pub mod presets;
 pub mod proxy;
+pub mod tray;
 
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -79,6 +80,7 @@ pub fn run() {
             commands::get_analytics_top_items,
             commands::metrics::check_usage_db,
             commands::metrics::get_model_detail_stats,
+            commands::metrics::get_proxy_detail_stats,
             commands::search_skills_sh,
             commands::install_skill_from_repo,
             commands::uninstall_skill,
@@ -86,9 +88,11 @@ pub fn run() {
             commands::get_mcp_config,
             commands::save_mcp_config,
             commands::restart_mcp_server,
+            commands::get_mcp_status,
             commands::get_mcp_stats,
             commands::inject_statusline,
             commands::remove_statusline,
+            commands::discover_existing_providers,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -117,16 +121,32 @@ pub fn run() {
 
             // 延迟启动代理服务器（不阻塞 setup）
             let db_for_proxy = db.clone();
+            let data_dir_for_proxy = data_dir.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
                 let client_pool = Arc::new(proxy::client_pool::ClientPool::new());
+
+                // 初始化 CCR 压缩引擎（SQLite 持久化，失败时降级为 in-memory）
+                let ccr_db_path = data_dir_for_proxy.join("ccr.db");
+                let compression_engine = match proxy::compression::CompressionEngine::new_sqlite(&ccr_db_path) {
+                    Ok(engine) => {
+                        log::info!("CCR compression engine initialized at {}", ccr_db_path.display());
+                        Arc::new(engine)
+                    }
+                    Err(e) => {
+                        log::warn!("CCR SQLite init failed ({}), using in-memory backend", e);
+                        Arc::new(proxy::compression::CompressionEngine::new_in_memory())
+                    }
+                };
+
                 let state = proxy::engine::ProxyState {
                     db: db_for_proxy,
                     client_pool,
                     api_key_resolver: Arc::new(|env_name: &str| {
                         std::env::var(env_name).ok()
                     }),
+                    compression_engine,
                 };
 
                 if let Err(e) = proxy::engine::start_proxy_server(18900, state).await {
@@ -190,6 +210,36 @@ pub fn run() {
                     });
                 }
             }
+
+            // 拦截窗口关闭：点 X 隐藏到托盘而非退出
+            if let Some(window) = app.get_webview_window("main") {
+                let win = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win.hide();
+                    }
+                });
+            }
+
+            // 系统托盘
+            if let Err(e) = tray::setup(app.handle()) {
+                log::error!("Failed to setup tray: {}", e);
+            }
+
+            // 定时刷新托盘 MCP 状态（每 10 秒）
+            let app_handle_for_tray = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await; // 等待 MCP 首次启动
+                let running = tray::check_mcp_running(&app_handle_for_tray).await;
+                tray::update_menu_status(&app_handle_for_tray, running);
+
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    let running = tray::check_mcp_running(&app_handle_for_tray).await;
+                    tray::update_menu_status(&app_handle_for_tray, running);
+                }
+            });
 
             Ok(())
         })

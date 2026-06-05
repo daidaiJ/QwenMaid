@@ -15,6 +15,7 @@ pub struct Provider {
     pub api_key_value: Option<String>,
     pub billing_type: String,
     pub is_active: bool,
+    pub compress_enabled: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -29,6 +30,7 @@ pub struct CreateProvider {
     pub auth_header: Option<String>,
     pub api_key_value: Option<String>,
     pub billing_type: Option<String>,
+    pub compress_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,11 +44,12 @@ pub struct UpdateProvider {
     pub api_key_value: Option<String>,
     pub billing_type: Option<String>,
     pub is_active: Option<bool>,
+    pub compress_enabled: Option<bool>,
 }
 
 pub fn list_providers(conn: &Connection) -> Result<Vec<Provider>, String> {
     let mut stmt = conn
-        .prepare("SELECT id, name, base_url, api_key_env, proxy_mode, proxy_url, auth_header, api_key_value, billing_type, is_active, created_at, updated_at FROM providers ORDER BY id")
+        .prepare("SELECT id, name, base_url, api_key_env, proxy_mode, proxy_url, auth_header, api_key_value, billing_type, is_active, compress_enabled, created_at, updated_at FROM providers ORDER BY id")
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
@@ -62,8 +65,9 @@ pub fn list_providers(conn: &Connection) -> Result<Vec<Provider>, String> {
                 api_key_value: row.get(7)?,
                 billing_type: row.get(8)?,
                 is_active: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                compress_enabled: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -73,7 +77,7 @@ pub fn list_providers(conn: &Connection) -> Result<Vec<Provider>, String> {
 
 pub fn get_provider(conn: &Connection, id: i64) -> Result<Provider, String> {
     conn.query_row(
-        "SELECT id, name, base_url, api_key_env, proxy_mode, proxy_url, auth_header, api_key_value, billing_type, is_active, created_at, updated_at FROM providers WHERE id = ?1",
+        "SELECT id, name, base_url, api_key_env, proxy_mode, proxy_url, auth_header, api_key_value, billing_type, is_active, compress_enabled, created_at, updated_at FROM providers WHERE id = ?1",
         [id],
         |row| {
             Ok(Provider {
@@ -87,8 +91,9 @@ pub fn get_provider(conn: &Connection, id: i64) -> Result<Provider, String> {
                 api_key_value: row.get(7)?,
                 billing_type: row.get(8)?,
                 is_active: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                compress_enabled: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         },
     ).map_err(|e| e.to_string())
@@ -97,9 +102,10 @@ pub fn get_provider(conn: &Connection, id: i64) -> Result<Provider, String> {
 pub fn create_provider(conn: &Connection, p: &CreateProvider) -> Result<Provider, String> {
     let proxy_mode = p.proxy_mode.as_deref().unwrap_or("system");
     let billing_type = p.billing_type.as_deref().unwrap_or("pay_per_use");
+    let compress_enabled = p.compress_enabled.unwrap_or(false);
     conn.execute(
-        "INSERT INTO providers (name, base_url, api_key_env, proxy_mode, proxy_url, auth_header, api_key_value, billing_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        rusqlite::params![p.name, p.base_url, p.api_key_env, proxy_mode, p.proxy_url, p.auth_header, p.api_key_value, billing_type],
+        "INSERT INTO providers (name, base_url, api_key_env, proxy_mode, proxy_url, auth_header, api_key_value, billing_type, compress_enabled) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![p.name, p.base_url, p.api_key_env, proxy_mode, p.proxy_url, p.auth_header, p.api_key_value, billing_type, compress_enabled],
     ).map_err(|e| e.to_string())?;
 
     let id = conn.last_insert_rowid();
@@ -120,8 +126,9 @@ pub fn update_provider(conn: &Connection, id: i64, u: &UpdateProvider) -> Result
             api_key_value = ?7,
             billing_type = COALESCE(?8, billing_type),
             is_active = COALESCE(?9, is_active),
+            compress_enabled = COALESCE(?10, compress_enabled),
             updated_at = datetime('now')
-        WHERE id = ?10",
+        WHERE id = ?11",
         rusqlite::params![
             u.name,
             u.base_url,
@@ -132,6 +139,7 @@ pub fn update_provider(conn: &Connection, id: i64, u: &UpdateProvider) -> Result
             u.api_key_value.as_ref().or(current.api_key_value.as_ref()),
             u.billing_type,
             u.is_active,
+            u.compress_enabled,
             id
         ],
     )
@@ -237,7 +245,7 @@ pub fn find_model_route(
 ) -> Result<Option<ModelRoute>, String> {
     let result = conn.query_row(
         "SELECT m.id, m.model_id, m.auth_type, m.is_default, m.config_json,
-                p.id, p.name, p.base_url, p.api_key_env, p.proxy_mode, p.proxy_url, p.auth_header, p.billing_type
+                p.id, p.name, p.base_url, p.api_key_env, p.proxy_mode, p.proxy_url, p.auth_header, p.billing_type, p.compress_enabled
          FROM models m
          JOIN providers p ON m.provider_id = p.id
          WHERE m.model_id = ?1 AND p.is_active = 1
@@ -262,6 +270,7 @@ pub fn find_model_route(
                 proxy_url: row.get(10)?,
                 auth_header: row.get(11)?,
                 billing_type: row.get(12)?,
+                compress_enabled: row.get(13)?,
             })
         },
     );
@@ -281,7 +290,7 @@ pub fn find_all_routes(
     let mut stmt = conn
         .prepare(
             "SELECT m.id, m.model_id, m.auth_type, m.is_default, m.config_json,
-                    p.id, p.name, p.base_url, p.api_key_env, p.proxy_mode, p.proxy_url, p.auth_header, p.billing_type
+                    p.id, p.name, p.base_url, p.api_key_env, p.proxy_mode, p.proxy_url, p.auth_header, p.billing_type, p.compress_enabled
              FROM models m
              JOIN providers p ON m.provider_id = p.id
              WHERE m.model_id = ?1 AND p.is_active = 1
@@ -306,6 +315,7 @@ pub fn find_all_routes(
                 proxy_url: row.get(10)?,
                 auth_header: row.get(11)?,
                 billing_type: row.get(12)?,
+                compress_enabled: row.get(13)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -336,6 +346,7 @@ pub struct ModelRoute {
     pub proxy_url: Option<String>,
     pub auth_header: Option<String>,
     pub billing_type: String,
+    pub compress_enabled: bool,
 }
 
 pub fn create_model(conn: &Connection, m: &CreateModel) -> Result<Model, String> {

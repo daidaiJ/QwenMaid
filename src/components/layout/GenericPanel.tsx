@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { ResizableColumns } from "@/components/layout/ResizableColumns";
-import { Search, Plus, Trash2, RefreshCw, Loader2, Eye, Pencil } from "lucide-react";
+import { Search, Plus, Trash2, RefreshCw, Loader2, Eye, Pencil, ChevronRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 // ── 通用列表项 ───────────────────────────────────────────
@@ -241,7 +241,7 @@ export function GenericThreeColumnPanel({
                     >
                       {isGroup && loadGroupChildren && !searchQuery && (
                         <span className={`shrink-0 text-[var(--text-muted)] transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`}>
-                          {isLoading ? <Loader2 size={12} className="animate-spin" /> : "▶"}
+                          {isLoading ? <Loader2 size={12} className="animate-spin" /> : <ChevronRight size={12} />}
                         </span>
                       )}
                       {item.icon && <span className="shrink-0">{item.icon}</span>}

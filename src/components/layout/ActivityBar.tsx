@@ -1,5 +1,5 @@
 import { useRef, useCallback } from "react";
-import { Settings, Network, BarChart3, Puzzle, Search, BookOpen, Download, Package, MessageSquare, Bot } from "lucide-react";
+import { Settings, Network, BarChart3, Puzzle, Search, BookOpen, Download, Package, MessageSquare, Bot, Info } from "lucide-react";
 
 export type PanelId =
   | "config"
@@ -11,7 +11,8 @@ export type PanelId =
   | "memory"
   | "sessions"
   | "subagents"
-  | "install";
+  | "install"
+  | "about";
 
 interface ActivityBarProps {
   active: PanelId;
@@ -31,6 +32,7 @@ const items: { id: PanelId; icon: typeof Settings; label: string }[] = [
   { id: "sessions", icon: MessageSquare, label: "会话" },
   { id: "subagents", icon: Bot, label: "子 Agent" },
   { id: "install", icon: Download, label: "安装/更新" },
+  { id: "about", icon: Info, label: "关于" },
 ];
 
 const MIN_W = 48;

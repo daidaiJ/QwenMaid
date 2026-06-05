@@ -15,6 +15,7 @@ pub struct McpConfig {
     pub cleanfetch_enabled: bool,
     pub search_mode: String,
     pub tavily_api_key: Option<String>,
+    pub baidu_api_key: Option<String>,
     pub jina_api_key: Option<String>,
     pub proxy_url: Option<String>,
 }
@@ -44,7 +45,7 @@ pub struct ApiStats {
 pub fn get_config(db: &Connection) -> Result<McpConfig, String> {
     db.query_row(
         "SELECT port, auto_inject, smartsearch_enabled, academicsearch_enabled, \
-         cleanfetch_enabled, search_mode, tavily_api_key, jina_api_key, proxy_url \
+         cleanfetch_enabled, search_mode, tavily_api_key, baidu_api_key, jina_api_key, proxy_url \
          FROM mcp_config WHERE id = 1",
         [],
         |row| {
@@ -56,8 +57,9 @@ pub fn get_config(db: &Connection) -> Result<McpConfig, String> {
                 cleanfetch_enabled: row.get(4)?,
                 search_mode: row.get(5)?,
                 tavily_api_key: row.get(6)?,
-                jina_api_key: row.get(7)?,
-                proxy_url: row.get(8)?,
+                baidu_api_key: row.get(7)?,
+                jina_api_key: row.get(8)?,
+                proxy_url: row.get(9)?,
             })
         },
     )
@@ -68,7 +70,7 @@ pub fn save_config(db: &Connection, config: &McpConfig) -> Result<(), String> {
     db.execute(
         "UPDATE mcp_config SET port = ?1, auto_inject = ?2, smartsearch_enabled = ?3, \
          academicsearch_enabled = ?4, cleanfetch_enabled = ?5, search_mode = ?6, \
-         tavily_api_key = ?7, jina_api_key = ?8, proxy_url = ?9, \
+         tavily_api_key = ?7, baidu_api_key = ?8, jina_api_key = ?9, proxy_url = ?10, \
          updated_at = datetime('now') WHERE id = 1",
         rusqlite::params![
             config.port,
@@ -78,6 +80,7 @@ pub fn save_config(db: &Connection, config: &McpConfig) -> Result<(), String> {
             config.cleanfetch_enabled,
             config.search_mode,
             config.tavily_api_key,
+            config.baidu_api_key,
             config.jina_api_key,
             config.proxy_url,
         ],
@@ -168,5 +171,11 @@ pub async fn start_mcp_server(
         return Ok(());
     }
 
-    server::start_server(config.port, db, shutdown_rx).await
+    // 先绑定端口，失败立即返回（端口冲突等）
+    let listener = server::bind_port(config.port).await?;
+    // 端口绑定成功，启动 serve（后台运行，错误只 log）
+    if let Err(e) = server::start_server(listener, db, shutdown_rx).await {
+        log::error!("MCP server error: {}", e);
+    }
+    Ok(())
 }

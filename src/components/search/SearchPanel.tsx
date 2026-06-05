@@ -21,6 +21,7 @@ import {
   getMcpConfig,
   saveMcpConfig,
   restartMcpServer,
+  getMcpStatus,
   getMcpStats,
   injectStatusline,
   removeStatusline,
@@ -43,6 +44,7 @@ const DEFAULT_CONFIG: McpConfig = {
   cleanfetch_enabled: true,
   search_mode: "engine",
   tavily_api_key: null,
+  baidu_api_key: null,
   jina_api_key: null,
   proxy_url: null,
 };
@@ -55,6 +57,7 @@ export function SearchPanel() {
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [statuslineEnabled, setStatuslineEnabled] = useState(false);
+  const [mcpRunning, setMcpRunning] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
@@ -80,14 +83,28 @@ export function SearchPanel() {
       setStats(s);
     }).catch(() => {});
 
-    // 次要：状态行状态（读 settings.json）
+    // 次要：状态行状态（读 settings.json 的 ui.statusLine）
     readSettings().then((settings) => {
       if (!mountedRef.current) return;
-      const sl = settings?.statusLine as Record<string, unknown> | undefined;
+      const ui = settings?.ui as Record<string, unknown> | undefined;
+      const sl = ui?.statusLine as Record<string, unknown> | undefined;
       setStatuslineEnabled(!!sl?.command);
     }).catch(() => {});
 
-    return () => { mountedRef.current = false; };
+    // 运行时 MCP 状态检测
+    getMcpStatus().then((running) => {
+      if (!mountedRef.current) return;
+      setMcpRunning(running);
+    }).catch(() => {});
+
+    // 每 10 秒轮询 MCP 运行状态
+    const statusTimer = setInterval(() => {
+      getMcpStatus().then((running) => {
+        if (mountedRef.current) setMcpRunning(running);
+      }).catch(() => {});
+    }, 10000);
+
+    return () => { mountedRef.current = false; clearInterval(statusTimer); };
   }, []);
 
   const updateConfig = async (patch: Partial<McpConfig>) => {
@@ -127,8 +144,13 @@ export function SearchPanel() {
     setRestarting(true);
     try {
       await restartMcpServer();
-      showToast("MCP 服务已重启");
+      // 等待服务器启动后检测状态
+      await new Promise((r) => setTimeout(r, 500));
+      const running = await getMcpStatus();
+      setMcpRunning(running);
+      showToast(running ? "MCP 服务已重启" : "MCP 服务重启失败");
     } catch (e) {
+      setMcpRunning(false);
       showToast(`重启失败: ${e}`);
     } finally {
       setRestarting(false);
@@ -178,19 +200,17 @@ export function SearchPanel() {
       <div className="flex items-center gap-3 py-2 px-1">
         <div
           className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${
-            config.smartsearch_enabled || config.cleanfetch_enabled
+            mcpRunning
               ? "bg-green-50 text-green-700 border border-green-200"
-              : "bg-gray-50 text-gray-500 border border-gray-200"
+              : "bg-red-50 text-red-600 border border-red-200"
           }`}
         >
-          {config.smartsearch_enabled || config.cleanfetch_enabled ? (
+          {mcpRunning ? (
             <CheckCircle size={12} />
           ) : (
             <XCircle size={12} />
           )}
-          {config.smartsearch_enabled || config.cleanfetch_enabled
-            ? "运行中"
-            : "已停止"}
+          {mcpRunning ? "运行中" : "已停止"}
         </div>
         <span className="text-xs text-[var(--text-muted)]">
           端口 {config.port}
@@ -333,6 +353,19 @@ export function SearchPanel() {
             value={config.tavily_api_key || ""}
             onChange={(v) => updateConfig({ tavily_api_key: v || null })}
             placeholder="tvly-..."
+          />
+        </Field>
+      )}
+
+      {(config.search_mode === "baidu" || config.search_mode === "engine") && (
+        <Field
+          label="百度 API Key"
+          description="用于百度搜索 API（千帆），留空则走抓取模式"
+        >
+          <SecretInput
+            value={config.baidu_api_key || ""}
+            onChange={(v) => updateConfig({ baidu_api_key: v || null })}
+            placeholder="百度千帆 API Key"
           />
         </Field>
       )}

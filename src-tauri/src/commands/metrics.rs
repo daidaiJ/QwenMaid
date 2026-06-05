@@ -121,7 +121,9 @@ fn query_request_logs(
 ) -> Result<Vec<(String, String, i64, i64, i64, i64)>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT date(timestamp), model_id,
+            "SELECT strftime('%Y-%m-%d %H:%M', timestamp,
+                       '-' || (CAST(strftime('%M', timestamp) AS INTEGER) % 30) || ' minutes'),
+                    model_id,
                     COALESCE(SUM(input_tokens), 0),
                     COALESCE(SUM(output_tokens), 0),
                     COALESCE(SUM(cache_read_tokens), 0),
@@ -129,7 +131,7 @@ fn query_request_logs(
              FROM request_logs
              WHERE timestamp >= datetime('now', '-' || ?1 || ' days')
                AND model_id IS NOT NULL AND model_id != ''
-             GROUP BY date(timestamp), model_id",
+             GROUP BY 1, model_id",
         )
         .map_err(|e| e.to_string())?;
 
@@ -205,10 +207,16 @@ fn query_call_records(days: u32) -> Result<HashMap<(String, String), CallRecordD
     let completion_tok_col = find_col(&columns, &["completion_tokens", "output_tokens"]);
     let cached_tok_col = find_col(&columns, &["cached_tokens", "cache_read_tokens"]);
 
-    // 构建动态查询
+    // 构建动态查询 — 30 分钟粒度
+    // 注意：recorded_at 可能是 Go 格式（含时区/单调时钟），strftime 无法解析
+    // 安全做法：用 SUBSTR 截取前 16 字符 "YYYY-MM-DD HH:MM"，再截断分钟
     let date_expr = match date_col.as_deref() {
-        Some("recorded_at") => "SUBSTR(recorded_at, 1, 10)".to_string(),
-        Some(c) => format!("DATE({})", c),
+        Some(c) => format!(
+            "CASE WHEN LENGTH({0}) >= 16 AND CAST(SUBSTR({0}, 16, 2) AS INTEGER) IS NOT NULL \
+             THEN SUBSTR({0}, 1, 14) || CASE WHEN CAST(SUBSTR({0}, 16, 2) AS INTEGER) < 30 THEN '00' ELSE '30' END \
+             ELSE DATE({0}) END",
+            c
+        ),
         None => "NULL".to_string(),
     };
     let model_expr = model_col.as_deref().unwrap_or("NULL").to_string();
@@ -222,7 +230,7 @@ fn query_call_records(days: u32) -> Result<HashMap<(String, String), CallRecordD
     let cached_expr = cached_tok_col.as_deref().unwrap_or("0").to_string();
 
     let sql = format!(
-        "SELECT {}, {}, {}, {}, {}, {}, {} FROM call_records WHERE SUBSTR({}, 1, 10) >= SUBSTR(datetime('now', '-' || ?1 || ' days'), 1, 10)",
+        "SELECT {}, {}, {}, {}, {}, {}, {} FROM call_records WHERE {} >= datetime('now', '-' || ?1 || ' days')",
         date_expr, model_expr, latency_expr, tps_expr,
         prompt_expr, completion_expr, cached_expr,
         date_col.as_deref().unwrap_or("recorded_at")
@@ -403,6 +411,146 @@ pub fn get_model_detail_stats(
     models.sort_by(|a, b| {
         (b.total_input + b.total_output).cmp(&(a.total_input + a.total_output))
     });
+
+    let mut daily: Vec<ModelDailyDetail> = daily_map.into_values().collect();
+    daily.sort_by(|a, b| b.date.cmp(&a.date).then(a.model.cmp(&b.model)));
+
+    Ok(ModelDetailData { models, daily })
+}
+
+/// 从 request_logs 查询代理层详情数据（含延迟 + TPS）
+#[tauri::command]
+pub fn get_proxy_detail_stats(
+    state: tauri::State<'_, super::AppState>,
+    days: u32,
+) -> Result<ModelDetailData, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // 查询 request_logs 的 token + 延迟数据
+    let mut stmt = db
+        .prepare(
+            "SELECT strftime('%Y-%m-%d %H:%M', timestamp,
+                       '-' || (CAST(strftime('%M', timestamp) AS INTEGER) % 30) || ' minutes'),
+                    model_id,
+                    COALESCE(SUM(input_tokens), 0),
+                    COALESCE(SUM(output_tokens), 0),
+                    COALESCE(SUM(cache_read_tokens), 0),
+                    COUNT(*),
+                    COALESCE(SUM(duration_ms), 0),
+                    GROUP_CONCAT(duration_ms)
+             FROM request_logs
+             WHERE timestamp >= datetime('now', '-' || ?1 || ' days')
+               AND model_id IS NOT NULL AND model_id != ''
+               AND status_code >= 200 AND status_code < 400
+             GROUP BY 1, model_id",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows: Vec<(String, String, i64, i64, i64, i64, i64, Option<String>)> = stmt
+        .query_map(rusqlite::params![days], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, Option<String>>(7)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut daily_map: HashMap<(String, String), ModelDailyDetail> = HashMap::new();
+
+    for (date, model, inp, out, cache, count, total_duration, durations_str) in &rows {
+        let key = (date.clone(), model.clone());
+        let entry = daily_map.entry(key).or_insert(ModelDailyDetail {
+            date: date.clone(),
+            model: model.clone(),
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read: 0,
+            uncached_input: 0,
+            avg_tps: 0.0,
+            avg_latency: 0.0,
+            p50_latency: 0.0,
+            p95_latency: 0.0,
+            request_count: 0,
+        });
+        entry.input_tokens = *inp;
+        entry.output_tokens = *out;
+        entry.cache_read = *cache;
+        entry.uncached_input = (inp - cache).max(0);
+        entry.request_count = *count;
+
+        // TPS: output_tokens / total_duration * 1000
+        if *total_duration > 0 && *out > 0 {
+            entry.avg_tps = (*out as f64) / (*total_duration as f64) * 1000.0;
+        }
+
+        // 延迟统计：从 GROUP_CONCAT 的 duration_ms 列表计算 P50/P95
+        if let Some(dur_str) = durations_str {
+            let mut latencies: Vec<f64> = dur_str
+                .split(',')
+                .filter_map(|s| s.parse::<f64>().ok())
+                .filter(|&v| v > 0.0)
+                .collect();
+            if !latencies.is_empty() {
+                latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                entry.avg_latency = latencies.iter().sum::<f64>() / latencies.len() as f64;
+                entry.p50_latency = percentile(&latencies, 50.0);
+                entry.p95_latency = percentile(&latencies, 95.0);
+            }
+        }
+    }
+
+    // 聚合 ModelMeta
+    let mut meta_map: HashMap<String, ModelMeta> = HashMap::new();
+    for d in daily_map.values() {
+        let entry = meta_map.entry(d.model.clone()).or_insert(ModelMeta {
+            model: d.model.clone(),
+            total_requests: 0,
+            total_input: 0,
+            total_output: 0,
+            total_cache: 0,
+            avg_tps: 0.0,
+            p50_latency: 0.0,
+            p95_latency: 0.0,
+        });
+        entry.total_requests += d.request_count;
+        entry.total_input += d.input_tokens;
+        entry.total_output += d.output_tokens;
+        entry.total_cache += d.cache_read;
+    }
+
+    // 性能汇总
+    let mut model_latencies: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut model_tps: HashMap<String, Vec<f64>> = HashMap::new();
+    for d in daily_map.values() {
+        if d.p50_latency > 0.0 {
+            model_latencies.entry(d.model.clone()).or_default().push(d.avg_latency);
+        }
+        if d.avg_tps > 0.0 {
+            model_tps.entry(d.model.clone()).or_default().push(d.avg_tps);
+        }
+    }
+    for (model, meta) in meta_map.iter_mut() {
+        if let Some(lats) = model_latencies.get(model) {
+            let mut sorted = lats.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            meta.p50_latency = percentile(&sorted, 50.0);
+            meta.p95_latency = percentile(&sorted, 95.0);
+        }
+        if let Some(tps_vals) = model_tps.get(model) {
+            meta.avg_tps = tps_vals.iter().sum::<f64>() / tps_vals.len() as f64;
+        }
+    }
+
+    let mut models: Vec<ModelMeta> = meta_map.into_values().collect();
+    models.sort_by(|a, b| (b.total_input + b.total_output).cmp(&(a.total_input + a.total_output)));
 
     let mut daily: Vec<ModelDailyDetail> = daily_map.into_values().collect();
     daily.sort_by(|a, b| b.date.cmp(&a.date).then(a.model.cmp(&b.model)));

@@ -12,6 +12,7 @@ export interface Provider {
   auth_header: string | null;
   billing_type: "plan" | "pay_per_use";
   is_active: boolean;
+  compress_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +43,7 @@ export const createProvider = (args: {
   proxyUrl?: string;
   authHeader?: string;
   billingType?: string;
+  compressEnabled?: boolean;
 }) => invoke<Provider>("create_provider", args);
 
 export const updateProvider = (args: {
@@ -54,6 +56,7 @@ export const updateProvider = (args: {
   authHeader?: string;
   billingType?: string;
   isActive?: boolean;
+  compressEnabled?: boolean;
 }) => invoke<Provider>("update_provider", args);
 
 export const deleteProvider = (id: number) =>
@@ -102,6 +105,31 @@ export const syncConfigToSettings = () =>
 
 export const previewSyncConfig = () =>
   invoke<Record<string, unknown>>("preview_sync_config");
+
+// ── Provider Discovery ───────────────────────────────────
+
+export interface DiscoveredModel {
+  id: string;
+  name: string;
+  auth_type: string[];
+  valid: boolean;
+}
+
+export interface DiscoveredProvider {
+  name: string;
+  base_url: string;
+  protocol: string;
+  env_key: string;
+  has_key: boolean;
+  is_preset: boolean;
+  preset_name: string | null;
+  models: DiscoveredModel[];
+  valid: boolean;
+  error: string | null;
+}
+
+export const discoverExistingProviders = () =>
+  invoke<DiscoveredProvider[]>("discover_existing_providers");
 
 // ── File System Commands ─────────────────────────────────
 
@@ -370,6 +398,8 @@ export interface UsageDbInfo {
 export const checkUsageDb = () => invoke<UsageDbInfo>("check_usage_db");
 export const getModelDetailStats = (days: number) =>
   invoke<ModelDetailData>("get_model_detail_stats", { days });
+export const getProxyDetailStats = (days: number) =>
+  invoke<ModelDetailData>("get_proxy_detail_stats", { days });
 
 // Agents
 export const listAgents = () => invoke<AgentDef[]>("list_agents");
@@ -399,6 +429,7 @@ export interface McpConfig {
   cleanfetch_enabled: boolean;
   search_mode: string;
   tavily_api_key: string | null;
+  baidu_api_key: string | null;
   jina_api_key: string | null;
   proxy_url: string | null;
 }
@@ -433,11 +464,14 @@ export const saveMcpConfig = (config: McpConfig) =>
     cleanfetchEnabled: config.cleanfetch_enabled,
     searchMode: config.search_mode,
     tavilyApiKey: config.tavily_api_key,
+    baiduApiKey: config.baidu_api_key,
     jinaApiKey: config.jina_api_key,
     proxyUrl: config.proxy_url,
   });
 
 export const restartMcpServer = () => invoke<void>("restart_mcp_server");
+
+export const getMcpStatus = () => invoke<boolean>("get_mcp_status");
 
 export const getMcpStats = () => invoke<McpStats>("get_mcp_stats");
 

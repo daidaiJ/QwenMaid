@@ -78,17 +78,8 @@ pub fn sync_session_stats(conn: &Connection) -> Result<usize, String> {
 
             if !should_parse { continue; }
 
-            // 解析不持锁（文件 IO）
-            let old_parsed = existing.get(&key).and_then(|(_, _, pl, _)| if file_size > 0 { Some(*pl) } else { None });
-            let stats = if let Some(pl) = old_parsed {
-                if file_size > pl as u64 * 100 { // 粗略判断：文件确实增长了
-                    incremental_parse(&path, pl)
-                } else {
-                    parse_session_stats(&path, 0)
-                }
-            } else {
-                parse_session_stats(&path, 0)
-            };
+            // 始终全量重解析（增量解析的合并逻辑容易丢数据）
+            let stats = parse_session_stats(&path, 0);
 
             // 写入 DB（持锁，但每个文件单独写，很快释放）
             upsert_session(conn, &project, &session_id, &path, file_size, &mtime, &stats);
@@ -97,40 +88,6 @@ pub fn sync_session_stats(conn: &Connection) -> Result<usize, String> {
     }
 
     Ok(synced)
-}
-
-/// 增量解析：只解析 skip_lines 之后的新增行，统计数据与已有记录合并
-fn incremental_parse(path: &std::path::Path, skip_lines: usize) -> ParsedStats {
-    let file = match fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return empty_stats(),
-    };
-    let mut reader = BufReader::new(file);
-
-    // 跳过已解析的行（只读字节，不做 JSON 解析）
-    let mut skipped = 0usize;
-    let mut skip_buf = String::new();
-    while skipped < skip_lines {
-        skip_buf.clear();
-        match reader.read_line(&mut skip_buf) {
-            Ok(0) => return empty_stats(), // EOF
-            Ok(_) => skipped += 1,
-            Err(_) => return empty_stats(),
-        }
-    }
-
-    // 只解析新增行
-    let mut stats = empty_stats();
-    for line in reader.lines() {
-        let line = match line { Ok(l) => l, Err(_) => continue };
-        let json: Value = match serde_json::from_str(&line) {
-            Ok(v) => v, Err(_) => continue,
-        };
-        parse_one_line(&json, &mut stats);
-    }
-    // title 和 first_line 在增量模式下不需要重新提取
-    stats.parsed_lines = skip_lines + (stats.message_count);
-    stats
 }
 
 /// 将统计结果写入/更新 DB

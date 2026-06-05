@@ -1,10 +1,14 @@
+use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::extract::State as AxumState;
 use axum::http::StatusCode;
+use axum::response::sse::{Event, Sse};
 use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::Router;
+use futures::stream::Stream;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
@@ -17,8 +21,16 @@ pub struct McpState {
     pub http: reqwest::Client,
 }
 
+/// 绑定 MCP 端口，返回 listener。调用方可据此判断服务器是否成功启动。
+pub async fn bind_port(port: u16) -> Result<tokio::net::TcpListener, String> {
+    let addr = format!("127.0.0.1:{}", port);
+    tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("Failed to bind MCP port {}: {}", port, e))
+}
+
 pub async fn start_server(
-    port: u16,
+    listener: tokio::net::TcpListener,
     db: Arc<Mutex<Connection>>,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
@@ -30,15 +42,10 @@ pub async fn start_server(
     let state = McpState { db, http };
 
     let app = Router::new()
-        .route("/mcp", post(handle_mcp))
+        .route("/mcp", post(handle_mcp).get(handle_mcp_get))
         .with_state(state);
 
-    let addr = format!("127.0.0.1:{}", port);
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .map_err(|e| format!("Failed to bind MCP port {}: {}", port, e))?;
-
-    log::info!("MCP server listening on {}", addr);
+    log::info!("MCP server listening on {}", listener.local_addr().unwrap());
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
@@ -51,6 +58,30 @@ pub async fn start_server(
         })
         .await
         .map_err(|e| format!("MCP server error: {}", e))
+}
+
+/// GET /mcp — SSE 保活流，客户端可通过此连接检测服务器存活状态。
+/// 每 15 秒发送一次 heartbeat 事件，断开时客户端可感知服务器下线。
+async fn handle_mcp_get() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let first = futures::stream::iter(std::iter::once(
+        Ok(Event::default().event("endpoint").data("/mcp")),
+    ));
+    let heartbeat = futures::stream::unfold(
+        tokio::time::interval(Duration::from_secs(15)),
+        |mut interval| async {
+            interval.tick().await;
+            Some((
+                Ok(Event::default().event("heartbeat").data("ping")),
+                interval,
+            ))
+        },
+    );
+    let stream = futures::StreamExt::chain(first, heartbeat);
+    Sse::new(stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(Duration::from_secs(30))
+            .text("keepalive"),
+    )
 }
 
 async fn handle_mcp(
@@ -102,7 +133,7 @@ fn handle_initialize(req: &JsonRpcRequest) -> JsonRpcResponse {
 fn read_config(db: &Connection) -> Value {
     db.query_row(
         "SELECT port, auto_inject, smartsearch_enabled, academicsearch_enabled, \
-         cleanfetch_enabled, search_mode, tavily_api_key, jina_api_key, proxy_url \
+         cleanfetch_enabled, search_mode, tavily_api_key, baidu_api_key, jina_api_key, proxy_url \
          FROM mcp_config WHERE id = 1",
         [],
         |row| {
@@ -114,8 +145,9 @@ fn read_config(db: &Connection) -> Value {
                 "cleanfetch_enabled": row.get::<_, bool>(4)?,
                 "search_mode": row.get::<_, String>(5)?,
                 "tavily_api_key": row.get::<_, Option<String>>(6)?,
-                "jina_api_key": row.get::<_, Option<String>>(7)?,
-                "proxy_url": row.get::<_, Option<String>>(8)?,
+                "baidu_api_key": row.get::<_, Option<String>>(7)?,
+                "jina_api_key": row.get::<_, Option<String>>(8)?,
+                "proxy_url": row.get::<_, Option<String>>(9)?,
             }))
         },
     )
@@ -266,6 +298,7 @@ async fn exec_smartsearch(
     db: &Arc<Mutex<Connection>>,
 ) -> Result<String, String> {
     let mode = config["search_mode"].as_str().unwrap_or("engine");
+    let baidu_key = config["baidu_api_key"].as_str().filter(|k| !k.is_empty());
 
     let results = match mode {
         "tavily" => {
@@ -283,7 +316,7 @@ async fn exec_smartsearch(
             r?
         }
         "baidu" => {
-            let r = engines::search_baidu(client, query).await;
+            let r = engines::search_baidu(client, query, baidu_key).await;
             record_stat(db, "smartsearch", "baidu", r.is_ok());
             r?
         }
@@ -296,13 +329,13 @@ async fn exec_smartsearch(
                 }
                 Ok(_) => {
                     record_stat(db, "smartsearch", "bing", true);
-                    let r = engines::search_baidu(client, query).await;
+                    let r = engines::search_baidu(client, query, baidu_key).await;
                     record_stat(db, "smartsearch", "baidu", r.is_ok());
                     r?
                 }
                 Err(_) => {
                     record_stat(db, "smartsearch", "bing", false);
-                    let r = engines::search_baidu(client, query).await;
+                    let r = engines::search_baidu(client, query, baidu_key).await;
                     record_stat(db, "smartsearch", "baidu", r.is_ok());
                     r?
                 }

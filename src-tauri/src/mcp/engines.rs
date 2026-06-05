@@ -86,7 +86,16 @@ fn parse_bing_html(html: &str) -> Result<Vec<SearchResult>, String> {
 
 // ── Baidu Search ─────────────────────────────────────────
 
-pub async fn search_baidu(client: &reqwest::Client, query: &str) -> Result<Vec<SearchResult>, String> {
+pub async fn search_baidu(
+    client: &reqwest::Client,
+    query: &str,
+    api_key: Option<&str>,
+) -> Result<Vec<SearchResult>, String> {
+    // 有 API key 时使用百度搜索 API，否则走抓取
+    if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+        return search_baidu_api(client, query, key).await;
+    }
+
     let url = format!(
         "https://www.baidu.com/s?tn=json&wd={}&rn=10",
         urlencoding::encode(query)
@@ -126,6 +135,48 @@ pub async fn search_baidu(client: &reqwest::Client, query: &str) -> Result<Vec<S
                 url,
                 snippet,
             })
+        })
+        .collect();
+
+    Ok(results)
+}
+
+/// 百度搜索 API（千帆 / 自定义搜索）
+async fn search_baidu_api(
+    client: &reqwest::Client,
+    query: &str,
+    api_key: &str,
+) -> Result<Vec<SearchResult>, String> {
+    let resp = client
+        .get("https://qianfan.baidubce.com/v2/app/tools/web_search")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .query(&[("query", query), ("count", "10")])
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| format!("Baidu API request failed: {}", e))?;
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Baidu API parse error: {}", e))?;
+
+    let items = body
+        .get("results")
+        .and_then(|r| r.as_array())
+        .ok_or_else(|| "Invalid Baidu API response".to_string())?;
+
+    let results: Vec<SearchResult> = items
+        .iter()
+        .filter_map(|r| {
+            let title = r.get("title")?.as_str()?.to_string();
+            let url = r.get("url")?.as_str()?.to_string();
+            let snippet = r
+                .get("content")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string();
+            Some(SearchResult { title, url, snippet })
         })
         .collect();
 
