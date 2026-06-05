@@ -517,7 +517,7 @@ function ProviderDetail({
           </div>
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5 pl-4">
             {useLocalProxy
-              ? `Qwen Code → AgentBox (localhost:18900) → ${provider.base_url}`
+              ? `Qwen Code → QWenMaid (localhost:18900) → ${provider.base_url}`
               : `Qwen Code → ${provider.base_url}（直连）`}
           </p>
           {useLocalProxy && (

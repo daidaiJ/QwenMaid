@@ -20,35 +20,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "agentbox"
-version = "0.1.0"
-dependencies = [
- "axum",
- "bytes",
- "chrono",
- "dirs",
- "env_logger",
- "futures",
- "http",
- "log",
- "only-cc-lite",
- "quick-xml 0.36.2",
- "regex",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "urlencoding",
- "uuid",
- "zip",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3079,6 +3050,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "qwenmaid"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "chrono",
+ "dirs",
+ "env_logger",
+ "futures",
+ "http",
+ "log",
+ "only-cc-lite",
+ "quick-xml 0.36.2",
+ "regex",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "urlencoding",
+ "uuid",
+ "zip",
 ]
 
 [[package]]

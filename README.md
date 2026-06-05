@@ -1,11 +1,11 @@
-# AgentBox
+# QWenMaid
 
 <p align="center">
-  <img src="src-tauri/icons/128x128.png" width="96" alt="AgentBox" />
+  <img src="src-tauri/icons/128x128.png" width="96" alt="QWenMaid" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/daidaiJ/AgentBox"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-AgentBox-181717?logo=github&logoColor=white"></a>
+  <a href="https://github.com/daidaiJ/QwenMaid"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-QWenMaid-181717?logo=github&logoColor=white"></a>
   <a href="https://github.com/daidaiJ"><img alt="Author" src="https://img.shields.io/badge/Author-daidaiJ-orange"></a>
   <img alt="License" src="https://img.shields.io/badge/License-MIT-green">
   <img alt="Platform" src="https://img.shields.io/badge/Platform-Win%20%7C%20macOS%20%7C%20Linux-lightgrey">
@@ -13,7 +13,7 @@
 
 **[Qwen Code](https://github.com/QwenLM/qwen-code) 的配套管理工具** — 供应商配置 / 代理转发 / 用量统计 / 会话分析 / MCP 网络服务
 
-⭐ 觉得不错？[给个 Star](https://github.com/daidaiJ/AgentBox)
+⭐ 觉得不错？[给个 Star](https://github.com/daidaiJ/QwenMaid)
 
 ---
 
@@ -58,7 +58,7 @@
 ```
 Qwen Code → POST localhost:18900/v1/messages
                 ↓
-         AgentBox 代理引擎 (axum)
+         QWenMaid 代理引擎 (axum)
            ├─ 路由解析（DB 查询）
            ├─ 鉴权转换
            ├─ 上下文压缩（only-cc-lite）

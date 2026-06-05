@@ -2,7 +2,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 
-pub const TRAY_ID: &str = "agentbox";
+pub const TRAY_ID: &str = "qwenmaid";
 
 /// 托盘菜单 ID
 const MENU_SHOW: &str = "show_main";
@@ -29,7 +29,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     let menu = build_menu(app, false)?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("AgentBox")
+        .tooltip("QWenMaid")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_tray_icon_event(|tray, event| {
@@ -146,9 +146,9 @@ pub fn update_menu_status(app: &tauri::AppHandle, mcp_running: bool) {
             let _ = tray.set_menu(Some(menu));
         }
         let tip = if mcp_running {
-            "AgentBox · MCP 运行中"
+            "QWenMaid · MCP 运行中"
         } else {
-            "AgentBox · MCP 已停止"
+            "QWenMaid · MCP 已停止"
         };
         let _ = tray.set_tooltip(Some(tip));
     }

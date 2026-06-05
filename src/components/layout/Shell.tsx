@@ -65,14 +65,14 @@ const panels: Record<PanelId, React.LazyExoticComponent<React.FC>> = {
 export function Shell() {
   const [active, setActive] = useState<PanelId>("cost");
   const [barWidth, setBarWidth] = useState(() => {
-    const saved = localStorage.getItem("agentbox:activityBarWidthV2");
+    const saved = localStorage.getItem("qwenmaid:activityBarWidthV2");
     return saved ? Number(saved) : 48;
   });
   const Panel = panels[active];
 
   const handleBarResize = (w: number) => {
     setBarWidth(w);
-    localStorage.setItem("agentbox:activityBarWidthV2", String(w));
+    localStorage.setItem("qwenmaid:activityBarWidthV2", String(w));
   };
 
   return (

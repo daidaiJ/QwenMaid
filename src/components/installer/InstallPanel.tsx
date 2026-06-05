@@ -88,7 +88,7 @@ function Section({
 
 // ── 模块级缓存（组件卸载重挂载时不丢失） ─────────────────
 
-const DETECT_CACHE_KEY = "agentbox:installDetectCache";
+const DETECT_CACHE_KEY = "qwenmaid:installDetectCache";
 const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
 
 interface DetectCacheData {

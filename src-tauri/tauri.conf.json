@@ -1,7 +1,7 @@
 {
-  "productName": "AgentBox",
+  "productName": "QWenMaid",
   "version": "0.1.0",
-  "identifier": "com.agentbox.desktop",
+  "identifier": "com.qwenmaid.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "AgentBox",
+        "title": "QWenMaid",
         "width": 1280,
         "height": 800,
         "resizable": true,

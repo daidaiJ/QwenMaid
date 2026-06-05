@@ -2,7 +2,7 @@ import { ExternalLink, Star, Code2, Layers, Settings, Network, BarChart3, Messag
 import type { LucideIcon } from "lucide-react";
 
 const APP_VERSION = "0.1.0";
-const REPO_URL = "https://github.com/daidaiJ/AgentBox";
+const REPO_URL = "https://github.com/daidaiJ/QwenMaid";
 const AUTHOR_URL = "https://github.com/daidaiJ";
 
 const features: { icon: LucideIcon; color: string; title: string; desc: string }[] = [
@@ -31,7 +31,7 @@ export function AboutPanel() {
         {/* Header block — terminal style */}
         <div className="p-4 rounded-lg bg-[var(--bg-sidebar)] border border-[var(--border)]">
           <div className="flex items-baseline gap-3">
-            <span className="text-[var(--accent)] text-lg font-bold tracking-tight">AgentBox</span>
+            <span className="text-[var(--accent)] text-lg font-bold tracking-tight">QWenMaid</span>
             <span className="text-xs text-[var(--text-muted)]">v{APP_VERSION}</span>
           </div>
           <p className="text-[var(--text-secondary)] text-xs mt-1.5 leading-relaxed">
