@@ -47,6 +47,7 @@ pub fn create_provider(
     authHeader: Option<String>,
     apiKeyValue: Option<String>,
     billingType: Option<String>,
+    compressEnabled: Option<bool>,
 ) -> Result<Provider, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     providers::create_provider(
@@ -60,6 +61,7 @@ pub fn create_provider(
             auth_header: authHeader,
             api_key_value: apiKeyValue,
             billing_type: billingType,
+            compress_enabled: compressEnabled,
         },
     )
 }
@@ -77,6 +79,7 @@ pub fn update_provider(
     apiKeyValue: Option<String>,
     billingType: Option<String>,
     isActive: Option<bool>,
+    compressEnabled: Option<bool>,
 ) -> Result<Provider, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     providers::update_provider(
@@ -92,6 +95,7 @@ pub fn update_provider(
             api_key_value: apiKeyValue,
             billing_type: billingType,
             is_active: isActive,
+            compress_enabled: compressEnabled,
         },
     )
 }

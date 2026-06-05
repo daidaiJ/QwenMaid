@@ -230,6 +230,7 @@ mod tests {
             proxy_url: None,
             auth_header: None,
             billing_type: billing_type.into(),
+            compress_enabled: false,
         }
     }
 

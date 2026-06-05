@@ -287,6 +287,14 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
 
+    if current < 9 {
+        let _ = conn.execute_batch(
+            "ALTER TABLE providers ADD COLUMN compress_enabled BOOLEAN NOT NULL DEFAULT 0"
+        );
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (9)", [])
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -354,5 +362,21 @@ mod tests {
         for row in stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,i64>(1)?, r.get::<_,i64>(2)?))).unwrap().flatten() {
             eprintln!("  {}: {} tokens, {} sessions", row.0, row.1, row.2);
         }
+    }
+
+    #[test]
+    fn test_migration_compress_enabled() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db_with_conn(&conn);
+
+        let has_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('providers') WHERE name='compress_enabled'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap()
+            > 0;
+        assert!(has_col, "providers table should have compress_enabled column");
     }
 }

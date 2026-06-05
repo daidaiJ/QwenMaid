@@ -378,6 +378,7 @@ mod tests {
                 auth_header: None,
                 api_key_value: None,
                 billing_type: Some("pay_per_use".into()),
+                compress_enabled: None,
             };
             let provider = providers::create_provider(&db, &p).unwrap();
             let m = providers::CreateModel {
