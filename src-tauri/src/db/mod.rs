@@ -34,7 +34,7 @@ fn create_tables(conn: &Connection) -> Result<(), String> {
             name        TEXT NOT NULL UNIQUE,
             base_url    TEXT NOT NULL,
             api_key_env TEXT NOT NULL,
-            proxy_mode  TEXT NOT NULL DEFAULT 'system' CHECK(proxy_mode IN ('system', 'custom', 'direct')),
+            proxy_mode  TEXT NOT NULL DEFAULT 'direct' CHECK(proxy_mode IN ('system', 'custom', 'direct')),
             proxy_url   TEXT,
             auth_header TEXT,
             billing_type TEXT NOT NULL DEFAULT 'pay_per_use' CHECK(billing_type IN ('plan', 'pay_per_use')),
@@ -298,6 +298,14 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
     if current < 10 {
         let _ = conn.execute_batch("ALTER TABLE mcp_config ADD COLUMN baidu_api_key TEXT");
         conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (10)", [])
+            .map_err(|e| e.to_string())?;
+    }
+
+    if current < 11 {
+        // 将所有 system 代理模式改为 direct（默认关闭本地路由代理）
+        conn.execute("UPDATE providers SET proxy_mode = 'direct' WHERE proxy_mode = 'system'", [])
+            .map_err(|e| e.to_string())?;
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (11)", [])
             .map_err(|e| e.to_string())?;
     }
 

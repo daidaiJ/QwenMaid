@@ -62,7 +62,7 @@ export function SessionsPanel() {
         id: `project:${p.name}`,
         label: dirName,
         description: fullPath,
-        badge: `${p.session_count}`,
+        badge: `${p.valid_session_count}`,
         badgeColor: "#58a6ff",
         isGroup: true,
       });
@@ -77,7 +77,10 @@ export function SessionsPanel() {
       // 后端 limit，只扫描需要的文件数
       const sessions = await listSessions(project, count);
 
-      const items: ListItem[] = sessions.map((s) => ({
+      // 隐藏 input_tokens=0 的会话（未同步或无数据）
+      const validSessions = sessions.filter((s) => s.input_tokens > 0);
+
+      const items: ListItem[] = validSessions.map((s) => ({
         id: `session:${project}:${s.id}`,
         label: s.title || s.id.slice(0, 8),
         description: formatRelativeTime(s.started_at),

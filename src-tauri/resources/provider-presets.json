@@ -3,7 +3,7 @@
     "name": "OpenAI",
     "baseUrl": "https://api.openai.com",
     "envPrefix": "OPENAI_API_KEY",
-    "proxyMode": "system",
+    "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
       { "id": "gpt-5.5", "name": "GPT-5.5", "authType": ["openai"] },
@@ -16,7 +16,7 @@
     "name": "Anthropic",
     "baseUrl": "https://api.anthropic.com",
     "envPrefix": "ANTHROPIC_API_KEY",
-    "proxyMode": "system",
+    "proxyMode": "direct",
     "billingType": "pay_per_use",
     "authHeader": "x-api-key",
     "models": [
@@ -30,7 +30,7 @@
     "name": "Google Gemini",
     "baseUrl": "https://generativelanguage.googleapis.com",
     "envPrefix": "GEMINI_API_KEY",
-    "proxyMode": "system",
+    "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
       { "id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash", "authType": ["gemini", "openai"] },
@@ -146,7 +146,9 @@
     "billingType": "pay_per_use",
     "models": [
       { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro", "authType": ["openai"] },
-      { "id": "mimo-v2.5", "name": "MiMo V2.5", "authType": ["openai"] }
+      { "id": "mimo-v2-pro", "name": "MiMo V2 Pro", "authType": ["openai"] },
+      { "id": "mimo-v2.5", "name": "MiMo V2.5", "authType": ["openai"] },
+      { "id": "mimo-v2-omni", "name": "MiMo V2 Omni", "authType": ["openai"] }
     ]
   },
   {
@@ -157,7 +159,10 @@
     "billingType": "pay_per_use",
     "authHeader": "api-key",
     "models": [
-      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro (Anthropic)", "authType": ["anthropic"] }
+      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro (Anthropic)", "authType": ["anthropic"] },
+      { "id": "mimo-v2-pro", "name": "MiMo V2 Pro (Anthropic)", "authType": ["anthropic"] },
+      { "id": "mimo-v2.5", "name": "MiMo V2.5 (Anthropic)", "authType": ["anthropic"] },
+      { "id": "mimo-v2-omni", "name": "MiMo V2 Omni (Anthropic)", "authType": ["anthropic"] }
     ]
   },
   {
@@ -168,7 +173,9 @@
     "billingType": "plan",
     "models": [
       { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro", "authType": ["openai"] },
-      { "id": "mimo-v2.5", "name": "MiMo V2.5", "authType": ["openai"] }
+      { "id": "mimo-v2-pro", "name": "MiMo V2 Pro", "authType": ["openai"] },
+      { "id": "mimo-v2.5", "name": "MiMo V2.5", "authType": ["openai"] },
+      { "id": "mimo-v2-omni", "name": "MiMo V2 Omni", "authType": ["openai"] }
     ]
   },
   {
@@ -179,14 +186,17 @@
     "billingType": "plan",
     "authHeader": "api-key",
     "models": [
-      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro (Anthropic)", "authType": ["anthropic"] }
+      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro (Anthropic)", "authType": ["anthropic"] },
+      { "id": "mimo-v2-pro", "name": "MiMo V2 Pro (Anthropic)", "authType": ["anthropic"] },
+      { "id": "mimo-v2.5", "name": "MiMo V2.5 (Anthropic)", "authType": ["anthropic"] },
+      { "id": "mimo-v2-omni", "name": "MiMo V2 Omni (Anthropic)", "authType": ["anthropic"] }
     ]
   },
   {
     "name": "Nvidia NIM",
     "baseUrl": "https://integrate.api.nvidia.com",
     "envPrefix": "NVIDIA_API_KEY",
-    "proxyMode": "system",
+    "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
       { "id": "moonshotai/kimi-k2.5", "name": "Kimi K2.5 (Nvidia NIM)", "authType": ["openai"] }
@@ -210,12 +220,13 @@
   },
   {
     "name": "OpenCode Go (OpenAI)",
-    "baseUrl": "https://opencode.ai/zen/go",
+    "baseUrl": "https://opencode.ai/zen/go/v1",
     "envPrefix": "OPENCODE_API_KEY",
-    "proxyMode": "system",
+    "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
       { "id": "glm-5.1", "name": "GLM-5.1", "authType": ["openai"] },
+      { "id": "glm-5", "name": "GLM-5", "authType": ["openai"] },
       { "id": "kimi-k2.6", "name": "Kimi K2.6", "authType": ["openai"] },
       { "id": "kimi-k2.5", "name": "Kimi K2.5", "authType": ["openai"] },
       { "id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "authType": ["openai"] },
@@ -228,12 +239,15 @@
     "name": "OpenCode Go (Anthropic)",
     "baseUrl": "https://opencode.ai/zen/go",
     "envPrefix": "OPENCODE_API_KEY",
-    "proxyMode": "system",
+    "proxyMode": "direct",
     "billingType": "pay_per_use",
+    "authHeader": "x-api-key",
     "models": [
       { "id": "minimax-m3", "name": "MiniMax M3", "authType": ["anthropic"] },
       { "id": "minimax-m2.7", "name": "MiniMax M2.7", "authType": ["anthropic"] },
+      { "id": "minimax-m2.5", "name": "MiniMax M2.5", "authType": ["anthropic"] },
       { "id": "qwen3.7-max", "name": "Qwen 3.7 Max", "authType": ["anthropic"] },
+      { "id": "qwen3.7-plus", "name": "Qwen 3.7 Plus", "authType": ["anthropic"] },
       { "id": "qwen3.6-plus", "name": "Qwen 3.6 Plus", "authType": ["anthropic"] }
     ]
   },
@@ -241,7 +255,7 @@
     "name": "OpenRouter",
     "baseUrl": "https://openrouter.ai/api",
     "envPrefix": "OPENROUTER_API_KEY",
-    "proxyMode": "system",
+    "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
       { "id": "anthropic/claude-opus-4.8", "name": "Claude Opus 4.8", "authType": ["openai"] },

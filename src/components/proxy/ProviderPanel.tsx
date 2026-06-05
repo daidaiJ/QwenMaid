@@ -11,6 +11,7 @@ import {
   updateModel,
   syncConfigToSettings,
   discoverExistingProviders,
+  syncPresetModelsToSettings,
 } from "@/lib/tauri";
 import type { Provider, Model, DiscoveredProvider } from "@/lib/tauri";
 import { Plus, Trash2, Server, Cpu, RefreshCw, ChevronRight, Search } from "lucide-react";
@@ -38,7 +39,7 @@ const TEMPLATES: ProviderTemplate[] = [
     name: "OpenAI",
     baseUrl: "https://api.openai.com",
     envPrefix: "OPENAI_API_KEY",
-    proxyMode: "system",
+    proxyMode: "direct",
     billingType: "pay_per_use",
     models: [
       { id: "gpt-4o", name: "GPT-4o", authType: ["openai"] },
@@ -50,7 +51,7 @@ const TEMPLATES: ProviderTemplate[] = [
     name: "Anthropic",
     baseUrl: "https://api.anthropic.com",
     envPrefix: "ANTHROPIC_API_KEY",
-    proxyMode: "system",
+    proxyMode: "direct",
     billingType: "pay_per_use",
     authHeader: "x-api-key",
     models: [
@@ -62,7 +63,7 @@ const TEMPLATES: ProviderTemplate[] = [
     name: "Google Gemini",
     baseUrl: "https://generativelanguage.googleapis.com",
     envPrefix: "GEMINI_API_KEY",
-    proxyMode: "system",
+    proxyMode: "direct",
     billingType: "pay_per_use",
     models: [
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", authType: ["gemini", "openai"] },
@@ -230,7 +231,7 @@ const TEMPLATES: ProviderTemplate[] = [
     name: "OpenCode-Go (OpenAI)",
     baseUrl: "https://opencode.ai/zen/go/v1",
     envPrefix: "OPENCODE_API_KEY",
-    proxyMode: "system",
+    proxyMode: "direct",
     billingType: "pay_per_use",
     models: [
       { id: "glm-5.1", name: "GLM-5.1", authType: ["openai"] },
@@ -247,8 +248,9 @@ const TEMPLATES: ProviderTemplate[] = [
     name: "OpenCode-Go (Anthropic)",
     baseUrl: "https://opencode.ai/zen/go",
     envPrefix: "OPENCODE_API_KEY",
-    proxyMode: "system",
+    proxyMode: "direct",
     billingType: "pay_per_use",
+    authHeader: "x-api-key",
     models: [
       { id: "minimax-m3", name: "MiniMax M3", authType: ["anthropic"] },
       { id: "minimax-m2.7", name: "MiniMax M2.7", authType: ["anthropic"] },
@@ -278,18 +280,7 @@ export function ProviderPanel() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [discovered, setDiscovered] = useState<DiscoveredProvider[]>([]);
   const [discovering, setDiscovering] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    const ps = await listProviders();
-    setProviders(ps);
-    if (ps.length > 0 && selected === null) setSelected(ps[0].id);
-    setLoading(false);
-    // 空列表时自动触发配置发现
-    if (ps.length === 0) {
-      runDiscovery();
-    }
-  }, [selected]);
+  const [presetSyncing, setPresetSyncing] = useState(false);
 
   const runDiscovery = async () => {
     setDiscovering(true);
@@ -302,6 +293,20 @@ export function ProviderPanel() {
       setDiscovering(false);
     }
   };
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const ps = await listProviders();
+    setProviders(ps);
+    if (ps.length === 0) {
+      setSelected(null);
+    } else if (selected === null || !ps.some(p => p.id === selected)) {
+      setSelected(ps[0].id);
+    }
+    setLoading(false);
+    // 自动运行发现以获取预设补齐信息
+    runDiscovery();
+  }, [selected]);
 
   useEffect(() => { refresh(); }, []);
 
@@ -346,7 +351,13 @@ export function ProviderPanel() {
               </div>
             </div>
             <div className="flex-1 overflow-auto py-0.5">
-              {providers.map((p) => (
+              {providers.map((p) => {
+                // 计算该供应商可补齐的预设模型数
+                const dp = discovered.find(d =>
+                  d.preset_name === p.name || d.name === p.name
+                );
+                const presetCount = dp?.models.filter(m => m.from_preset).length ?? 0;
+                return (
                 <button
                   key={p.id}
                   onClick={() => setSelected(p.id)}
@@ -358,14 +369,20 @@ export function ProviderPanel() {
                 >
                   <Server size={13} className="shrink-0 text-[var(--text-muted)]" />
                   <span className="truncate">{p.name}</span>
+                  {presetCount > 0 && (
+                    <span className="ml-auto text-[10px] text-[#3fb950] bg-[#3fb9501a] px-1 rounded" title={`可补齐 ${presetCount} 个预设模型`}>
+                      +{presetCount}
+                    </span>
+                  )}
                   {p.billing_type === "plan" && (
-                    <span className="ml-auto text-[10px] text-[#3794ff] bg-[#3794ff1a] px-1 rounded">P</span>
+                    <span className={`${presetCount > 0 ? "" : "ml-auto"} text-[10px] text-[#3794ff] bg-[#3794ff1a] px-1 rounded`}>P</span>
                   )}
                   {!p.is_active && (
                     <span className="text-[10px] text-[var(--text-muted)]">停用</span>
                   )}
                 </button>
-              ))}
+                );
+              })}
               {providers.length === 0 && (
                 <p className="px-3 py-4 text-xs text-[var(--text-muted)]">
                   暂无供应商，点击 + 添加
@@ -374,6 +391,33 @@ export function ProviderPanel() {
             </div>
             {/* 同步按钮 */}
             <div className="border-t border-[var(--border)] p-2 space-y-1">
+              {(() => {
+                const totalPreset = discovered.reduce(
+                  (sum, d) => sum + d.models.filter(m => m.from_preset).length, 0
+                );
+                return totalPreset > 0 ? (
+                  <button
+                    onClick={async () => {
+                      setPresetSyncing(true);
+                      try {
+                        const count = await syncPresetModelsToSettings();
+                        setSyncResult(`已补齐 ${count} 个预设模型`);
+                        refresh();
+                        setTimeout(() => setSyncResult(null), 3000);
+                      } catch (e) {
+                        setSyncResult(`补齐失败: ${e}`);
+                      } finally {
+                        setPresetSyncing(false);
+                      }
+                    }}
+                    disabled={presetSyncing}
+                    className="w-full flex items-center justify-center gap-1.5 h-7 text-xs bg-[#3fb950] text-white rounded-sm hover:opacity-90 disabled:opacity-40 transition-colors"
+                  >
+                    <RefreshCw size={12} className={presetSyncing ? "animate-spin" : ""} />
+                    {presetSyncing ? "补齐中…" : `补齐预设 (+${totalPreset})`}
+                  </button>
+                ) : null;
+              })()}
               <button
                 onClick={async () => {
                   setSyncing(true);
@@ -402,18 +446,22 @@ export function ProviderPanel() {
       }}
       center={{
         className: "flex flex-col overflow-auto",
-        children: selected != null ? (
-          <ProviderDetail
-            provider={providers.find((p) => p.id === selected)!}
-            models={models}
-            onRefresh={refresh}
-            onModelsRefresh={() => listModels(selected).then(setModels)}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
-            选择左侧供应商查看详情
-          </div>
-        ),
+        children: (() => {
+          const sp = selected != null ? providers.find((p) => p.id === selected) : undefined;
+          return sp ? (
+            <ProviderDetail
+              key={sp.id}
+              provider={sp}
+              models={models}
+              onRefresh={refresh}
+              onModelsRefresh={() => listModels(selected!).then(setModels)}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
+              {providers.length > 0 ? "选择左侧供应商查看详情" : ""}
+            </div>
+          );
+        })(),
       }}
     />
 
@@ -823,7 +871,7 @@ function AddProviderDialog({
     name: "",
     baseUrl: "",
     apiKeyEnv: "",
-    proxyMode: "system",
+    proxyMode: "direct",
     proxyUrl: "",
     authHeader: "",
     billingType: "pay_per_use",
@@ -890,7 +938,7 @@ function AddProviderDialog({
       name: dp.preset_name ?? dp.name,
       baseUrl: dp.base_url,
       apiKeyEnv: dp.env_key,
-      proxyMode: "system",
+      proxyMode: "direct",
       billingType: "pay_per_use",
       authHeader: dp.protocol === "anthropic" ? "x-api-key" : undefined,
     });
@@ -901,6 +949,7 @@ function AddProviderDialog({
         displayName: m.name,
         authType: JSON.stringify(m.auth_type),
         isDefault: false,
+        configJson: m.config_json ?? undefined,
       });
     }
     onCreated();
@@ -963,9 +1012,17 @@ function AddProviderDialog({
                     </div>
                     <span className="text-[11px] text-[var(--text-muted)] font-mono">{dp.base_url}</span>
                     <div className="flex flex-wrap gap-1 mt-1.5">
-                      {dp.models.map((m) => (
-                        <span key={m.id} className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-1 rounded-sm">
-                          {m.name}
+                      {dp.models.map((m, i) => (
+                        <span
+                          key={`${m.id}-${i}`}
+                          className={`text-[10px] px-1 rounded-sm ${
+                            m.from_preset
+                              ? "text-[#3fb950] bg-[#3fb95012] border border-dashed border-[#3fb95040]"
+                              : "text-[var(--text-muted)] bg-[var(--bg-input)]"
+                          }`}
+                          title={m.from_preset ? "预设补齐" : undefined}
+                        >
+                          {m.from_preset ? `+ ${m.name}` : m.name}
                         </span>
                       ))}
                     </div>
@@ -990,8 +1047,8 @@ function AddProviderDialog({
                   <span className="text-[13px] font-medium text-[var(--text-primary)]">{t.name}</span>
                   <span className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate w-full">{t.baseUrl}</span>
                   <div className="flex gap-1 mt-1.5">
-                    {t.models.slice(0, 3).map((m) => (
-                      <span key={m.id} className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-1 rounded-sm">{m.name}</span>
+                    {t.models.slice(0, 3).map((m, i) => (
+                      <span key={`${m.id}-${i}`} className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-1 rounded-sm">{m.name}</span>
                     ))}
                   </div>
                 </button>

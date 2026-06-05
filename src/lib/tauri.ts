@@ -112,7 +112,9 @@ export interface DiscoveredModel {
   id: string;
   name: string;
   auth_type: string[];
+  config_json: string | null;
   valid: boolean;
+  from_preset: boolean;
 }
 
 export interface DiscoveredProvider {
@@ -130,6 +132,9 @@ export interface DiscoveredProvider {
 
 export const discoverExistingProviders = () =>
   invoke<DiscoveredProvider[]>("discover_existing_providers");
+
+export const syncPresetModelsToSettings = () =>
+  invoke<number>("sync_preset_models_to_settings");
 
 // ── File System Commands ─────────────────────────────────
 
@@ -191,6 +196,7 @@ export interface SessionInfo {
   title: string;
   started_at: string;
   message_count: number;
+  input_tokens: number;
   file_path: string;
 }
 
@@ -292,6 +298,7 @@ export interface GlobalIndex {
 export interface ProjectIndex {
   name: string;
   session_count: number;
+  valid_session_count: number;
   memory_count: number;
   latest_session: string | null;
 }

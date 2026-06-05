@@ -187,6 +187,7 @@ pub struct SessionInfo {
     pub title: String,
     pub started_at: String,
     pub message_count: usize,
+    pub input_tokens: i64,
     pub file_path: String,
 }
 
@@ -306,7 +307,7 @@ pub fn list_sessions(
         let file_size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
         // 从 DB 缓存获取 title/tokens
-        let (title, _input_tokens) = db_cache.get(&id)
+        let (title, input_tokens) = db_cache.get(&id)
             .map(|(t, tok)| (t.clone(), *tok))
             .unwrap_or_default();
 
@@ -320,6 +321,7 @@ pub fn list_sessions(
             title,
             started_at: String::new(), // 不阻塞，后续 stats-synced 事件补充
             message_count: (file_size / 500).max(1) as usize, // 估算
+            input_tokens,
             file_path: path.to_string_lossy().to_string(),
         });
     }
@@ -755,10 +757,15 @@ pub fn list_agents() -> Result<Vec<AgentDef>, String> {
 }
 
 /// 读取 agent 定义（分离 frontmatter 和正文）
+/// 支持传入文件完整路径或 agent 名称（向后兼容）
 #[tauri::command]
 pub fn read_agent(name: String) -> Result<Value, String> {
-    let path = qwen_home().join("agents").join(format!("{}.md", name));
-    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let path = if name.contains('/') || name.contains('\\') || name.ends_with(".md") {
+        PathBuf::from(&name)
+    } else {
+        qwen_home().join("agents").join(format!("{}.md", name))
+    };
+    let content = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
     let (_, fm, body) = split_frontmatter(&content);
     Ok(json!({
         "frontmatter": fm,
@@ -769,7 +776,11 @@ pub fn read_agent(name: String) -> Result<Value, String> {
 /// 写回 agent 定义
 #[tauri::command]
 pub fn write_agent(name: String, content: String) -> Result<(), String> {
-    let path = qwen_home().join("agents").join(format!("{}.md", name));
+    let path = if name.contains('/') || name.contains('\\') || name.ends_with(".md") {
+        PathBuf::from(&name)
+    } else {
+        qwen_home().join("agents").join(format!("{}.md", name))
+    };
     if path.exists() {
         let backup = path.with_extension("md.bak");
         fs::copy(&path, &backup).ok();
@@ -780,7 +791,11 @@ pub fn write_agent(name: String, content: String) -> Result<(), String> {
 /// 删除 agent 定义
 #[tauri::command]
 pub fn delete_agent(name: String) -> Result<(), String> {
-    let path = qwen_home().join("agents").join(format!("{}.md", name));
+    let path = if name.contains('/') || name.contains('\\') || name.ends_with(".md") {
+        PathBuf::from(&name)
+    } else {
+        qwen_home().join("agents").join(format!("{}.md", name))
+    };
     if !path.exists() {
         return Err("文件不存在".into());
     }
@@ -944,6 +959,7 @@ pub struct GlobalIndex {
 pub struct ProjectIndex {
     pub name: String,
     pub session_count: usize,
+    pub valid_session_count: usize,
     pub memory_count: usize,
     pub latest_session: Option<String>,
 }
@@ -954,6 +970,24 @@ pub fn get_index(state: tauri::State<'_, AppState>, limit: Option<usize>, offset
     let global_memories = state.global_memory_cache.lock().unwrap().clone();
     let qwen = qwen_home();
     let projects_dir = qwen.join("projects");
+
+    // 从 DB 查询每个项目 input_tokens > 0 的会话数
+    let valid_counts: std::collections::HashMap<String, usize> = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let mut map = std::collections::HashMap::new();
+        if let Ok(mut stmt) = db.prepare(
+            "SELECT project, COUNT(*) FROM session_stats WHERE input_tokens > 0 GROUP BY project"
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+            }) {
+                for row in rows.flatten() {
+                    map.insert(row.0, row.1);
+                }
+            }
+        }
+        map
+    };
 
     let mut all_projects: Vec<ProjectIndex> = Vec::new();
     if projects_dir.is_dir() {
@@ -985,6 +1019,8 @@ pub fn get_index(state: tauri::State<'_, AppState>, limit: Option<usize>, offset
             };
 
             if session_count == 0 { continue; }
+
+            let valid_session_count = valid_counts.get(&name).copied().unwrap_or(0);
 
             // 记忆：扫描 memory/ 目录
             let memory_dir = entry.path().join("memory");
@@ -1021,7 +1057,7 @@ pub fn get_index(state: tauri::State<'_, AppState>, limit: Option<usize>, offset
                 if newest_id.is_empty() { None } else { Some(newest_id) }
             } else { None };
 
-            all_projects.push(ProjectIndex { name, session_count, memory_count, latest_session });
+            all_projects.push(ProjectIndex { name, session_count, valid_session_count, memory_count, latest_session });
         }
     }
 
