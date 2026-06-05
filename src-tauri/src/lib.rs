@@ -121,12 +121,14 @@ pub fn run() {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
                 let client_pool = Arc::new(proxy::client_pool::ClientPool::new());
+                let compression_engine = Arc::new(proxy::compression::CompressionEngine::new_in_memory());
                 let state = proxy::engine::ProxyState {
                     db: db_for_proxy,
                     client_pool,
                     api_key_resolver: Arc::new(|env_name: &str| {
                         std::env::var(env_name).ok()
                     }),
+                    compression_engine,
                 };
 
                 if let Err(e) = proxy::engine::start_proxy_server(18900, state).await {

@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use super::auth::{self, AuthStrategy};
 use super::client_pool::ClientPool;
+use super::compression::CompressionEngine;
 use crate::db::providers::{self, ModelRoute};
 
 /// axum 共享状态
@@ -19,6 +20,7 @@ pub struct ProxyState {
     pub db: Arc<Mutex<Connection>>,
     pub client_pool: Arc<ClientPool>,
     pub api_key_resolver: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
+    pub compression_engine: Arc<CompressionEngine>,
 }
 
 /// 创建 axum 路由
@@ -185,7 +187,7 @@ fn pick_auth_strategy(auth_type_json: &str, endpoint: &str) -> AuthStrategy {
     }
 }
 
-/// 通用请求转发（含成功后更新 last_success_at）
+/// 通用请求转发（含条件性上下文压缩 + request_logs 写入）
 async fn forward_request(
     state: &ProxyState,
     route: &ModelRoute,
@@ -205,12 +207,22 @@ async fn forward_request(
         .and_then(|v| v.get("stream")?.as_bool())
         .unwrap_or(false);
 
+    // 条件性压缩
+    let (body_bytes, compress_info) = if route.compress_enabled {
+        let result = state.compression_engine.compress(body.as_bytes(), endpoint, &route.model_id);
+        let original_tokens = estimate_tokens(body.len());
+        let compressed_tokens = estimate_tokens(result.body.len());
+        (result.body, Some((original_tokens, compressed_tokens)))
+    } else {
+        (body.as_bytes().to_vec(), None)
+    };
+
     let mut req_builder = client.post(&url).header("content-type", "application/json");
     for (k, v) in headers {
         req_builder = req_builder.header(k.as_str(), v.as_str());
     }
 
-    let resp = req_builder.body(body.to_string()).send().await.map_err(|e| {
+    let resp = req_builder.body(body_bytes).send().await.map_err(|e| {
         ProxyErrorResponse {
             status: StatusCode::BAD_GATEWAY,
             message: format!("provider unreachable: {}", e),
@@ -218,6 +230,7 @@ async fn forward_request(
     })?;
 
     // 请求成功后更新路由亲和性
+    let status_code = resp.status().as_u16();
     if resp.status().is_success() {
         let db = state.db.lock().ok();
         if let Some(conn) = db {
@@ -225,7 +238,10 @@ async fn forward_request(
         }
     }
 
-    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    // 记录 request_log（含压缩指标）
+    log_request(state, route, endpoint, is_stream, &compress_info, status_code);
+
+    let status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::BAD_GATEWAY);
 
     if is_stream {
         let stream = resp.bytes_stream();
@@ -243,6 +259,51 @@ async fn forward_request(
         })?;
         Ok((status, [("content-type", "application/json")], resp_body).into_response())
     }
+}
+
+/// 粗略估算 token 数（1 token ≈ 4 字节）
+fn estimate_tokens(bytes: usize) -> u64 {
+    (bytes as u64 + 3) / 4
+}
+
+/// 记录请求日志到 request_logs 表
+fn log_request(
+    state: &ProxyState,
+    route: &ModelRoute,
+    endpoint: &str,
+    is_stream: bool,
+    compress_info: &Option<(u64, u64)>,
+    status_code: u16,
+) {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let (context_compressed, original_tokens, tokens_saved) = match compress_info {
+        Some((orig, compressed)) => {
+            let saved = orig.saturating_sub(*compressed);
+            (true, *orig, saved)
+        }
+        None => (false, 0, 0),
+    };
+
+    let db = match state.db.lock() {
+        Ok(db) => db,
+        Err(_) => return,
+    };
+
+    let _ = db.execute(
+        "INSERT INTO request_logs (request_id, provider_id, model_id, auth_type, endpoint, is_stream, context_compressed, original_tokens, tokens_saved, status_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            request_id,
+            route.provider_id,
+            route.model_id,
+            route.auth_type,
+            endpoint,
+            is_stream,
+            context_compressed,
+            original_tokens,
+            tokens_saved,
+            status_code,
+        ],
+    );
 }
 
 /// 构建上游 URL，处理 baseUrl 与 endpoint 的路径去重
@@ -354,6 +415,7 @@ mod tests {
                     None
                 }
             }),
+            compression_engine: Arc::new(CompressionEngine::new_in_memory()),
         }
     }
 
