@@ -274,6 +274,11 @@ pub fn sync_providers_to_settings(
         });
     }
 
+    // 加载预设（用于 direct 模式下查找原始 baseUrl）
+    let data_dir = crate::db::db_path(&std::path::PathBuf::from("."))
+        .parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let presets = crate::presets::load_presets(&data_dir);
+
     // 从 DB 读取所有 active providers 和 models
     let all_providers = providers::list_providers(db)?;
     let all_models = providers::list_models(db, None)?;
@@ -295,11 +300,12 @@ pub fn sync_providers_to_settings(
             });
 
         for auth_type in &auth_types {
+            let effective_url = get_effective_base_url(provider, auth_type, &presets);
             let mut entry = json!({
                 "id": model.model_id,
                 "name": model.display_name.as_deref().unwrap_or(&model.model_id),
                 "envKey": provider.api_key_env,
-                "baseUrl": get_effective_base_url(provider, auth_type),
+                "baseUrl": effective_url,
             });
 
             // 从 config_json 合并 generationConfig（含 contextWindowSize、extra_body 等）
@@ -314,16 +320,48 @@ pub fn sync_providers_to_settings(
                 }
             }
 
+            // 如果预设有非标准 authHeader，注入 customHeaders（用实际 key 值）
+            let du = provider.base_url.trim_end_matches('/');
+            let provider_host = crate::commands::extract_host(&provider.base_url);
+            let matched_preset = presets.iter().find(|p| {
+                p.base_url.trim_end_matches('/') == du
+                    && p.models.iter().any(|m| m.auth_type.iter().any(|at| at == auth_type.as_str()))
+            }).or_else(|| presets.iter().find(|p| {
+                crate::commands::extract_host(&p.base_url) == provider_host
+                    && p.models.iter().any(|m| m.auth_type.iter().any(|at| at == auth_type.as_str()))
+            }));
+            if let Some(preset) = matched_preset {
+                if let Some(ref auth_header) = preset.auth_header {
+                    if auth_header.to_lowercase() != "authorization" {
+                        if let Some(ref api_key) = provider.api_key_value {
+                            if !api_key.is_empty() {
+                                let gen = entry
+                                    .as_object_mut().unwrap()
+                                    .entry("generationConfig".to_string())
+                                    .or_insert_with(|| json!({}));
+                                if let Some(gen_obj) = gen.as_object_mut() {
+                                    let headers = gen_obj
+                                        .entry("customHeaders".to_string())
+                                        .or_insert_with(|| json!({}));
+                                    if let Some(h) = headers.as_object_mut() {
+                                        h.insert(auth_header.clone(), json!(api_key));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             let list = new_providers
                 .entry(auth_type.clone())
                 .or_insert_with(|| json!([]));
 
             if let Some(arr) = list.as_array_mut() {
-                // 替换同 id + baseUrl 的条目
+                // 用 effective_url 做 dedup，避免 baseUrl 不一致导致重复
                 let existing_idx = arr.iter().position(|e| {
                     e.get("id").and_then(|v| v.as_str()) == Some(&model.model_id)
-                        && e.get("baseUrl").and_then(|v| v.as_str())
-                            == provider.base_url.as_str().into()
+                        && e.get("baseUrl").and_then(|v| v.as_str()) == Some(effective_url.as_str())
                 });
 
                 if let Some(idx) = existing_idx {
@@ -360,22 +398,33 @@ pub fn sync_providers_to_settings(
     })
 }
 
-/// 根据代理模式和 auth_type 决定写入 settings.json 的 baseUrl
-/// - 代理模式: baseUrl 指向本地代理 localhost:18900
-/// - 直连模式: baseUrl 指向供应商原始地址
-fn get_effective_base_url(provider: &providers::Provider, _auth_type: &str) -> String {
-    match provider.proxy_mode.as_str() {
-        "system" | "custom" | "direct" => {
-            // 代理模式下 Qwen Code 指向本地代理
-            if provider.proxy_mode == "system" || provider.proxy_mode == "custom" {
-                // 本地代理地址（后续从配置读取端口）
-                "http://localhost:18900".to_string()
-            } else {
-                provider.base_url.clone()
-            }
-        }
-        _ => provider.base_url.clone(),
+/// 写入 settings.json 的 baseUrl：始终使用预设原始地址
+/// 匹配逻辑：先精确匹配 baseUrl + authType，再降级到域名匹配
+fn get_effective_base_url(
+    provider: &providers::Provider,
+    auth_type: &str,
+    presets: &[crate::presets::ProviderPreset],
+) -> String {
+    let du = provider.base_url.trim_end_matches('/');
+
+    // 1. 精确匹配 baseUrl + 该协议下有模型
+    if let Some(p) = presets.iter().find(|p| {
+        p.base_url.trim_end_matches('/') == du
+            && p.models.iter().any(|m| m.auth_type.iter().any(|at| at == auth_type))
+    }) {
+        return p.base_url.clone();
     }
+
+    // 2. 域名匹配 + 该协议下有模型
+    let provider_host = crate::commands::extract_host(&provider.base_url);
+    if let Some(p) = presets.iter().find(|p| {
+        crate::commands::extract_host(&p.base_url) == provider_host
+            && p.models.iter().any(|m| m.auth_type.iter().any(|at| at == auth_type))
+    }) {
+        return p.base_url.clone();
+    }
+
+    provider.base_url.clone()
 }
 
 /// 剥离 JSONC 注释（// 和 /* */）
@@ -518,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sync_proxy_mode_uses_localhost() {
+    fn test_sync_always_uses_preset_base_url() {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::init_db_with_conn(&conn);
 
@@ -553,9 +602,10 @@ mod tests {
 
         let sync_result = sync_providers_to_settings(&PathBuf::from("/nonexistent"), &conn).unwrap();
         let settings = sync_result.settings.unwrap();
+        // baseUrl 始终使用预设原始地址，不因代理模式而改变
         assert_eq!(
             settings["modelProviders"]["openai"][0]["baseUrl"],
-            "http://localhost:18900"
+            "https://api.openai.com"
         );
     }
 }

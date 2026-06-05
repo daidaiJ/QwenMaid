@@ -93,6 +93,7 @@ pub fn run() {
             commands::inject_statusline,
             commands::remove_statusline,
             commands::discover_existing_providers,
+            commands::sync_preset_models_to_settings,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

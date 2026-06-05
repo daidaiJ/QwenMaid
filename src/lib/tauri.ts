@@ -113,6 +113,7 @@ export interface DiscoveredModel {
   name: string;
   auth_type: string[];
   valid: boolean;
+  from_preset: boolean;
 }
 
 export interface DiscoveredProvider {
@@ -130,6 +131,9 @@ export interface DiscoveredProvider {
 
 export const discoverExistingProviders = () =>
   invoke<DiscoveredProvider[]>("discover_existing_providers");
+
+export const syncPresetModelsToSettings = () =>
+  invoke<number>("sync_preset_models_to_settings");
 
 // ── File System Commands ─────────────────────────────────
 

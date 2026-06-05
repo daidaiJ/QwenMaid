@@ -612,6 +612,7 @@ pub struct DiscoveredModel {
     pub name: String,
     pub auth_type: Vec<String>,
     pub valid: bool,
+    pub from_preset: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -724,7 +725,7 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
             // 匹配预设
             let matched_preset = preset_index.get(&(host.clone(), protocol.clone()));
 
-            // 解析 models
+            // 解析 models（settings.json 中已有的）
             let mut models = Vec::new();
             let mut seen_ids = std::collections::HashSet::new();
             for entry in &group_entries {
@@ -746,7 +747,29 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                     name: name.to_string(),
                     auth_type: auth_types,
                     valid: true,
+                    from_preset: false,
                 });
+            }
+
+            // 补齐预设中已有但 settings.json 中缺失的模型
+            if let Some(preset) = matched_preset {
+                for pm in &preset.models {
+                    if seen_ids.contains(&pm.id) {
+                        continue;
+                    }
+                    // 只补齐协议匹配的预设模型
+                    if !pm.auth_type.iter().any(|at| at == protocol) {
+                        continue;
+                    }
+                    seen_ids.insert(pm.id.clone());
+                    models.push(DiscoveredModel {
+                        id: pm.id.clone(),
+                        name: pm.name.clone(),
+                        auth_type: pm.auth_type.clone(),
+                        valid: true,
+                        from_preset: true,
+                    });
+                }
             }
 
             if models.is_empty() {
@@ -790,8 +813,143 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
     Ok(discovered)
 }
 
+/// 将预设中已有但 settings.json 中缺失的模型补齐写入 settings.json
+///
+/// 匹配逻辑：按 baseUrl 域名 + authType 协议匹配预设
+/// 返回补齐的模型数量
+#[tauri::command]
+pub fn sync_preset_models_to_settings(_state: tauri::State<'_, AppState>) -> Result<usize, String> {
+    let settings_path = config::user_settings_path();
+    if !settings_path.exists() {
+        return Err("settings.json 不存在".into());
+    }
+
+    let mut settings = config::read_settings(&settings_path)?;
+
+    // 提前提取 env（避免与 model_providers 的可变借用冲突）
+    let env_map: std::collections::HashMap<String, String> = settings.get("env")
+        .and_then(|e| e.as_object())
+        .map(|obj| obj.iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .collect())
+        .unwrap_or_default();
+
+    let model_providers = match settings.get_mut("modelProviders").and_then(|v| v.as_object_mut()) {
+        Some(mp) => mp,
+        None => return Ok(0),
+    };
+
+    // 加载预设
+    let data_dir = crate::db::db_path(&std::path::PathBuf::from("."))
+        .parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let presets = crate::presets::load_presets(&data_dir);
+
+    // 构建预设匹配索引：(域名, 协议) → preset
+    let mut preset_index: std::collections::HashMap<(String, String), &crate::presets::ProviderPreset> =
+        std::collections::HashMap::new();
+    for preset in &presets {
+        let host = extract_host(&preset.base_url);
+        if host.is_empty() { continue; }
+        for m in &preset.models {
+            for at in &m.auth_type {
+                preset_index.insert((host.clone(), at.clone()), preset);
+            }
+        }
+    }
+
+    let mut added_count = 0usize;
+
+    for (protocol, entries) in model_providers {
+        let entries_arr = match entries.as_array_mut() {
+            Some(a) => a,
+            None => continue,
+        };
+
+        // 按 baseUrl 分组收集已有 model id
+        let mut url_ids: std::collections::HashMap<String, std::collections::HashSet<String>> =
+            std::collections::HashMap::new();
+        for entry in entries_arr.iter() {
+            let url = entry.get("baseUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = entry.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if !url.is_empty() && !id.is_empty() {
+                url_ids.entry(url).or_default().insert(id);
+            }
+        }
+
+        for (base_url, existing_ids) in &url_ids {
+            let host = extract_host(base_url);
+            let key = (host, protocol.clone());
+            let preset = match preset_index.get(&key) {
+                Some(p) => p,
+                None => continue,
+            };
+
+            // 找到该 baseUrl 下第一个条目作为模板
+            let template = entries_arr.iter()
+                .find(|e| e.get("baseUrl").and_then(|v| v.as_str()) == Some(base_url.as_str()));
+
+            let template = match template {
+                Some(t) => t.clone(),
+                None => continue,
+            };
+
+            // 添加缺失的预设模型
+            for pm in &preset.models {
+                if existing_ids.contains(&pm.id) {
+                    continue;
+                }
+                if !pm.auth_type.iter().any(|at| at == protocol) {
+                    continue;
+                }
+
+                let mut new_entry = template.clone();
+                new_entry["id"] = serde_json::Value::String(pm.id.clone());
+                new_entry["name"] = serde_json::Value::String(pm.name.clone());
+
+                // 如果预设有非标准 authHeader（如 x-api-key），注入 generationConfig.customHeaders
+                if let Some(ref auth_header) = preset.auth_header {
+                    if auth_header.to_lowercase() != "authorization" {
+                        // 从 settings.json 的 env 或 .env 获取实际 key 值
+                        let env_key: String = new_entry.get("envKey")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&preset.env_prefix)
+                            .to_string();
+                        let key_value = env_map.get(&env_key).cloned();
+
+                        if let Some(kv) = key_value {
+                            if !kv.is_empty() {
+                                let gen = new_entry
+                                    .as_object_mut().unwrap()
+                                    .entry("generationConfig")
+                                    .or_insert_with(|| serde_json::json!({}));
+                                if let Some(gen_obj) = gen.as_object_mut() {
+                                    let headers = gen_obj
+                                        .entry("customHeaders")
+                                        .or_insert_with(|| serde_json::json!({}));
+                                    if let Some(h) = headers.as_object_mut() {
+                                        h.insert(auth_header.clone(), serde_json::json!(kv));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                entries_arr.push(new_entry);
+                added_count += 1;
+            }
+        }
+    }
+
+    if added_count > 0 {
+        config::write_settings(&settings_path, &settings)?;
+    }
+
+    Ok(added_count)
+}
+
 /// 从 URL 中提取域名（不依赖 url crate）
-fn extract_host(url: &str) -> String {
+pub fn extract_host(url: &str) -> String {
     let s = url.trim();
     let after_scheme = if let Some(pos) = s.find("://") {
         &s[pos + 3..]
