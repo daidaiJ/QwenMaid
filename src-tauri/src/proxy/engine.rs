@@ -5,13 +5,16 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use futures::StreamExt;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
+use tokio::time::Instant;
 
 use super::auth::{self, AuthStrategy};
 use super::client_pool::ClientPool;
 use super::compression::CompressionEngine;
+use super::usage::UsageExtractor;
 use crate::db::providers::{self, ModelRoute};
 
 /// axum 共享状态
@@ -187,7 +190,7 @@ fn pick_auth_strategy(auth_type_json: &str, endpoint: &str) -> AuthStrategy {
     }
 }
 
-/// 通用请求转发（含条件性上下文压缩 + request_logs 写入）
+/// 通用请求转发（含条件性上下文压缩 + UsageExtractor + request_logs 写入）
 async fn forward_request(
     state: &ProxyState,
     route: &ModelRoute,
@@ -222,6 +225,7 @@ async fn forward_request(
         req_builder = req_builder.header(k.as_str(), v.as_str());
     }
 
+    let start_time = Instant::now();
     let resp = req_builder.body(body_bytes).send().await.map_err(|e| {
         ProxyErrorResponse {
             status: StatusCode::BAD_GATEWAY,
@@ -238,18 +242,62 @@ async fn forward_request(
         }
     }
 
-    // 记录 request_log（含压缩指标）
-    log_request(state, route, endpoint, is_stream, &compress_info, status_code);
-
     let status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::BAD_GATEWAY);
 
     if is_stream {
         let stream = resp.bytes_stream();
+        let mut extractor = UsageExtractor::new(endpoint);
+        let start = start_time;
 
+        // clone 所有引用数据供 spawn 使用
+        let state_owned = state.clone();
+        let route_owned = route.clone();
+        let endpoint_owned = endpoint.to_string();
+        let compress_owned = compress_info.clone();
+
+        // 用 channel 转发流：逐 chunk 喂给 extractor，同时转发给客户端
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<bytes::Bytes, axum::Error>>();
+
+        tokio::spawn(async move {
+            let mut first_byte: Option<Instant> = None;
+            let mut stream = Box::pin(stream);
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(data) => {
+                        if first_byte.is_none() {
+                            first_byte = Some(Instant::now());
+                        }
+                        extractor.process_chunk(&data);
+                        let _ = tx.send(Ok(data));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(axum::Error::new(e)));
+                    }
+                }
+            }
+            // 流结束，写入 request_logs
+            let duration_ms = start.elapsed().as_millis() as i64;
+            let ttft_ms = first_byte
+                .map(|t| t.duration_since(start).as_millis() as i64)
+                .unwrap_or(0);
+            log_request_usage(
+                &state_owned,
+                &route_owned,
+                &endpoint_owned,
+                is_stream,
+                &compress_owned,
+                status_code,
+                &extractor.snapshot,
+                duration_ms,
+                ttft_ms,
+            );
+        });
+
+        let body_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
         Ok((
             status,
             [("content-type", "text/event-stream")],
-            axum::body::Body::from_stream(stream),
+            axum::body::Body::from_stream(body_stream),
         )
             .into_response())
     } else {
@@ -257,6 +305,25 @@ async fn forward_request(
             status: StatusCode::BAD_GATEWAY,
             message: format!("read response: {}", e),
         })?;
+
+        let duration_ms = start_time.elapsed().as_millis() as i64;
+
+        // 非流式：从响应 JSON 中提取 usage
+        let mut extractor = UsageExtractor::new(endpoint);
+        extractor.process_chunk(resp_body.as_bytes());
+
+        log_request_usage(
+            state,
+            route,
+            endpoint,
+            is_stream,
+            &compress_info,
+            status_code,
+            &extractor.snapshot,
+            duration_ms,
+            duration_ms,
+        );
+
         Ok((status, [("content-type", "application/json")], resp_body).into_response())
     }
 }
@@ -266,14 +333,17 @@ fn estimate_tokens(bytes: usize) -> u64 {
     (bytes as u64 + 3) / 4
 }
 
-/// 记录请求日志到 request_logs 表
-fn log_request(
+/// 记录请求日志到 request_logs 表（含完整 usage + 延迟数据）
+fn log_request_usage(
     state: &ProxyState,
     route: &ModelRoute,
     endpoint: &str,
     is_stream: bool,
     compress_info: &Option<(u64, u64)>,
     status_code: u16,
+    usage: &super::usage::UsageSnapshot,
+    duration_ms: i64,
+    time_to_first_ms: i64,
 ) {
     let request_id = uuid::Uuid::new_v4().to_string();
     let (context_compressed, original_tokens, tokens_saved) = match compress_info {
@@ -290,7 +360,7 @@ fn log_request(
     };
 
     let _ = db.execute(
-        "INSERT INTO request_logs (request_id, provider_id, model_id, auth_type, endpoint, is_stream, context_compressed, original_tokens, tokens_saved, status_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO request_logs (request_id, provider_id, model_id, auth_type, endpoint, is_stream, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, duration_ms, time_to_first_ms, context_compressed, original_tokens, tokens_saved, status_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         rusqlite::params![
             request_id,
             route.provider_id,
@@ -298,6 +368,12 @@ fn log_request(
             route.auth_type,
             endpoint,
             is_stream,
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_read_tokens,
+            usage.cache_creation_tokens,
+            duration_ms,
+            time_to_first_ms,
             context_compressed,
             original_tokens,
             tokens_saved,
