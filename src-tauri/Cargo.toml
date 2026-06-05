@@ -41,5 +41,8 @@ urlencoding = "2"
 quick-xml = "0.36"
 regex = "1"
 
+# Context compression (headroom lite)
+only-cc-lite = { git = "https://github.com/daidaiJ/only-cc-lite" }
+
 [dev-dependencies]
 # 仅测试时编译，不影响 release 构建时间
