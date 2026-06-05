@@ -373,6 +373,8 @@ export interface UsageDbInfo {
 export const checkUsageDb = () => invoke<UsageDbInfo>("check_usage_db");
 export const getModelDetailStats = (days: number) =>
   invoke<ModelDetailData>("get_model_detail_stats", { days });
+export const getProxyDetailStats = (days: number) =>
+  invoke<ModelDetailData>("get_proxy_detail_stats", { days });
 
 // Agents
 export const listAgents = () => invoke<AgentDef[]>("list_agents");

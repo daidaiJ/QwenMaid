@@ -409,3 +409,141 @@ pub fn get_model_detail_stats(
 
     Ok(ModelDetailData { models, daily })
 }
+
+/// 从 request_logs 查询代理层详情数据（含延迟 + TPS）
+#[tauri::command]
+pub fn get_proxy_detail_stats(
+    state: tauri::State<'_, super::AppState>,
+    days: u32,
+) -> Result<ModelDetailData, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // 查询 request_logs 的 token + 延迟数据
+    let mut stmt = db
+        .prepare(
+            "SELECT date(timestamp), model_id,
+                    COALESCE(SUM(input_tokens), 0),
+                    COALESCE(SUM(output_tokens), 0),
+                    COALESCE(SUM(cache_read_tokens), 0),
+                    COUNT(*),
+                    COALESCE(SUM(duration_ms), 0),
+                    GROUP_CONCAT(duration_ms)
+             FROM request_logs
+             WHERE timestamp >= datetime('now', '-' || ?1 || ' days')
+               AND model_id IS NOT NULL AND model_id != ''
+               AND status_code >= 200 AND status_code < 400
+             GROUP BY date(timestamp), model_id",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows: Vec<(String, String, i64, i64, i64, i64, i64, Option<String>)> = stmt
+        .query_map(rusqlite::params![days], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, Option<String>>(7)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut daily_map: HashMap<(String, String), ModelDailyDetail> = HashMap::new();
+
+    for (date, model, inp, out, cache, count, total_duration, durations_str) in &rows {
+        let key = (date.clone(), model.clone());
+        let entry = daily_map.entry(key).or_insert(ModelDailyDetail {
+            date: date.clone(),
+            model: model.clone(),
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read: 0,
+            uncached_input: 0,
+            avg_tps: 0.0,
+            avg_latency: 0.0,
+            p50_latency: 0.0,
+            p95_latency: 0.0,
+            request_count: 0,
+        });
+        entry.input_tokens = *inp;
+        entry.output_tokens = *out;
+        entry.cache_read = *cache;
+        entry.uncached_input = (inp - cache).max(0);
+        entry.request_count = *count;
+
+        // TPS: output_tokens / total_duration * 1000
+        if *total_duration > 0 && *out > 0 {
+            entry.avg_tps = (*out as f64) / (*total_duration as f64) * 1000.0;
+        }
+
+        // 延迟统计：从 GROUP_CONCAT 的 duration_ms 列表计算 P50/P95
+        if let Some(dur_str) = durations_str {
+            let mut latencies: Vec<f64> = dur_str
+                .split(',')
+                .filter_map(|s| s.parse::<f64>().ok())
+                .filter(|&v| v > 0.0)
+                .collect();
+            if !latencies.is_empty() {
+                latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                entry.avg_latency = latencies.iter().sum::<f64>() / latencies.len() as f64;
+                entry.p50_latency = percentile(&latencies, 50.0);
+                entry.p95_latency = percentile(&latencies, 95.0);
+            }
+        }
+    }
+
+    // 聚合 ModelMeta
+    let mut meta_map: HashMap<String, ModelMeta> = HashMap::new();
+    for d in daily_map.values() {
+        let entry = meta_map.entry(d.model.clone()).or_insert(ModelMeta {
+            model: d.model.clone(),
+            total_requests: 0,
+            total_input: 0,
+            total_output: 0,
+            total_cache: 0,
+            avg_tps: 0.0,
+            p50_latency: 0.0,
+            p95_latency: 0.0,
+        });
+        entry.total_requests += d.request_count;
+        entry.total_input += d.input_tokens;
+        entry.total_output += d.output_tokens;
+        entry.total_cache += d.cache_read;
+    }
+
+    // 性能汇总
+    let mut model_latencies: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut model_tps: HashMap<String, Vec<f64>> = HashMap::new();
+    for d in daily_map.values() {
+        if d.p50_latency > 0.0 {
+            model_latencies.entry(d.model.clone()).or_default().push(d.avg_latency);
+        }
+        if d.avg_tps > 0.0 {
+            model_tps.entry(d.model.clone()).or_default().push(d.avg_tps);
+        }
+    }
+    for (model, meta) in meta_map.iter_mut() {
+        if let Some(lats) = model_latencies.get(model) {
+            let mut sorted = lats.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            meta.p50_latency = percentile(&sorted, 50.0);
+            meta.p95_latency = percentile(&sorted, 95.0);
+        }
+        if let Some(tps_vals) = model_tps.get(model) {
+            meta.avg_tps = tps_vals.iter().sum::<f64>() / tps_vals.len() as f64;
+        }
+    }
+
+    let mut models: Vec<ModelMeta> = meta_map.into_values().collect();
+    models.sort_by(|a, b| (b.total_input + b.total_output).cmp(&(a.total_input + a.total_output)));
+
+    let mut daily: Vec<ModelDailyDetail> = daily_map.into_values().collect();
+    daily.sort_by(|a, b| b.date.cmp(&a.date).then(a.model.cmp(&b.model)));
+
+    Ok(ModelDetailData { models, daily })
+}

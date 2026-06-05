@@ -79,6 +79,7 @@ pub fn run() {
             commands::get_analytics_top_items,
             commands::metrics::check_usage_db,
             commands::metrics::get_model_detail_stats,
+            commands::metrics::get_proxy_detail_stats,
             commands::search_skills_sh,
             commands::install_skill_from_repo,
             commands::uninstall_skill,
