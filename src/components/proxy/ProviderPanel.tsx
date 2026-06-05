@@ -425,6 +425,7 @@ function ProviderDetail({
     proxyMode: provider.proxy_mode,
     proxyUrl: provider.proxy_url ?? "",
     billingType: provider.billing_type ?? "pay_per_use",
+    compressEnabled: provider.compress_enabled ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
@@ -437,6 +438,7 @@ function ProviderDetail({
       ...form,
       proxyMode: enabled ? "system" : "direct",
       proxyUrl: enabled ? "" : form.proxyUrl,
+      compressEnabled: enabled ? form.compressEnabled : false,
     });
   };
 
@@ -451,6 +453,7 @@ function ProviderDetail({
         proxyMode: form.proxyMode,
         proxyUrl: form.proxyUrl || undefined,
         billingType: form.billingType,
+        compressEnabled: form.compressEnabled,
       });
       onRefresh();
     } finally {
@@ -493,6 +496,30 @@ function ProviderDetail({
               ? `Qwen Code → AgentBox (localhost:18900) → ${provider.base_url}`
               : `Qwen Code → ${provider.base_url}（直连）`}
           </p>
+          {useLocalProxy && (
+            <div className="flex items-center justify-between mt-2 pl-4">
+              <span className="text-[11px] text-[var(--text-muted)]">
+                🗜️ 上下文压缩（节省 40-90% tokens）
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.compressEnabled}
+                onClick={() => setForm({ ...form, compressEnabled: !form.compressEnabled })}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
+                  form.compressEnabled
+                    ? "bg-[var(--accent)] border-[var(--accent)]"
+                    : "bg-[var(--bg-input)] border-[var(--border)]"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                    form.compressEnabled ? "translate-x-[18px]" : "translate-x-[2px]"
+                  }`}
+                />
+              </button>
+            </div>
+          )}
         </div>
         {/* 自定义 Toggle 按钮 */}
         <button

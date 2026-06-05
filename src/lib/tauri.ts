@@ -12,6 +12,7 @@ export interface Provider {
   auth_header: string | null;
   billing_type: "plan" | "pay_per_use";
   is_active: boolean;
+  compress_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +43,7 @@ export const createProvider = (args: {
   proxyUrl?: string;
   authHeader?: string;
   billingType?: string;
+  compressEnabled?: boolean;
 }) => invoke<Provider>("create_provider", args);
 
 export const updateProvider = (args: {
@@ -54,6 +56,7 @@ export const updateProvider = (args: {
   authHeader?: string;
   billingType?: string;
   isActive?: boolean;
+  compressEnabled?: boolean;
 }) => invoke<Provider>("update_provider", args);
 
 export const deleteProvider = (id: number) =>
