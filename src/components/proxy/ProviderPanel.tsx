@@ -10,9 +10,10 @@ import {
   deleteModel,
   updateModel,
   syncConfigToSettings,
+  discoverExistingProviders,
 } from "@/lib/tauri";
-import type { Provider, Model } from "@/lib/tauri";
-import { Plus, Trash2, Server, Cpu, RefreshCw, ChevronRight } from "lucide-react";
+import type { Provider, Model, DiscoveredProvider } from "@/lib/tauri";
+import { Plus, Trash2, Server, Cpu, RefreshCw, ChevronRight, Search } from "lucide-react";
 
 // ── 预设供应商模板 ────────────────────────────────────────
 
@@ -258,12 +259,6 @@ const TEMPLATES: ProviderTemplate[] = [
   },
 ];
 
-const PROXY_MODES = [
-  { value: "system", label: "系统代理" },
-  { value: "custom", label: "自定义代理" },
-  { value: "direct", label: "直连" },
-] as const;
-
 const BILLING_TYPES = [
   { value: "plan", label: "订阅制 (Plan)" },
   { value: "pay_per_use", label: "按量计费" },
@@ -281,6 +276,8 @@ export function ProviderPanel() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [discovered, setDiscovered] = useState<DiscoveredProvider[]>([]);
+  const [discovering, setDiscovering] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -288,7 +285,23 @@ export function ProviderPanel() {
     setProviders(ps);
     if (ps.length > 0 && selected === null) setSelected(ps[0].id);
     setLoading(false);
+    // 空列表时自动触发配置发现
+    if (ps.length === 0) {
+      runDiscovery();
+    }
   }, [selected]);
+
+  const runDiscovery = async () => {
+    setDiscovering(true);
+    try {
+      const result = await discoverExistingProviders();
+      setDiscovered(result);
+    } catch {
+      setDiscovered([]);
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   useEffect(() => { refresh(); }, []);
 
@@ -315,12 +328,22 @@ export function ProviderPanel() {
           <>
             <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">供应商</span>
-              <button
-                onClick={() => setShowAddDialog(true)}
-                className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              >
-                <Plus size={14} />
-              </button>
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={runDiscovery}
+                  disabled={discovering}
+                  title="发现已有配置"
+                  className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-40"
+                >
+                  <Search size={13} className={discovering ? "animate-pulse" : ""} />
+                </button>
+                <button
+                  onClick={() => setShowAddDialog(true)}
+                  className="w-5 h-5 flex items-center justify-center rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-auto py-0.5">
               {providers.map((p) => (
@@ -397,6 +420,7 @@ export function ProviderPanel() {
     {/* 添加供应商弹窗 */}
     {showAddDialog && (
       <AddProviderDialog
+        discovered={discovered}
         onClose={() => setShowAddDialog(false)}
         onCreated={() => { setShowAddDialog(false); refresh(); }}
       />
@@ -559,23 +583,7 @@ function ProviderDetail({
               ))}
             </select>
           </div>
-          {/* 高级代理设置 */}
-          {useLocalProxy && (
-            <div>
-              <label className="block text-[11px] text-[var(--text-muted)] mb-1">上游代理</label>
-              <select
-                value={form.proxyMode}
-                onChange={(e) => setForm({ ...form, proxyMode: e.target.value as any })}
-                className="w-full h-8 bg-[var(--bg-input)] border border-[var(--border)] rounded-sm px-2 text-[13px] text-[var(--text-primary)] focus:border-[#007fd4] outline-none"
-              >
-                <option value="system">系统代理</option>
-                <option value="custom">自定义代理</option>
-              </select>
-            </div>
-          )}
-          {form.proxyMode === "custom" && (
-            <Field label="代理地址" value={form.proxyUrl} onChange={(v) => setForm({ ...form, proxyUrl: v })} placeholder="http://127.0.0.1:7890" />
-          )}
+          {/* 高级代理设置已移除，默认使用系统代理 */}
         </div>
         <button
           onClick={handleSave}
@@ -798,13 +806,18 @@ function ModelGenConfigEditor({
 // ── 添加供应商弹窗（模板选择） ──────────────────────────
 
 function AddProviderDialog({
+  discovered,
   onClose,
   onCreated,
 }: {
+  discovered: DiscoveredProvider[];
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [step, setStep] = useState<"template" | "form">("template");
+  const [tab, setTab] = useState<"templates" | "discovered">(
+    discovered.length > 0 ? "discovered" : "templates"
+  );
   const [apiKey, setApiKey] = useState("");
   const [form, setForm] = useState({
     name: "",
@@ -871,39 +884,128 @@ function AddProviderDialog({
     onCreated();
   };
 
+  // 导入已发现的供应商
+  const importDiscovered = async (dp: DiscoveredProvider) => {
+    const provider = await createProvider({
+      name: dp.preset_name ?? dp.name,
+      baseUrl: dp.base_url,
+      apiKeyEnv: dp.env_key,
+      proxyMode: "system",
+      billingType: "pay_per_use",
+      authHeader: dp.protocol === "anthropic" ? "x-api-key" : undefined,
+    });
+    for (const m of dp.models) {
+      await createModel({
+        providerId: provider.id,
+        modelId: m.id,
+        displayName: m.name,
+        authType: JSON.stringify(m.auth_type),
+        isDefault: false,
+      });
+    }
+    onCreated();
+  };
+
   // 模板选择步骤
   if (step === "template") {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-overlay)]" onClick={onClose}>
         <div className="bg-[var(--bg-panel)] rounded-md p-0 w-[480px] border border-[var(--border-strong)] shadow-[var(--shadow-dialog)]" onClick={(e) => e.stopPropagation()}>
           <div className="px-4 py-3 border-b border-[var(--border-strong)]">
-            <h3 className="text-sm font-medium text-[var(--text-primary)]">选择供应商模板</h3>
-            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">选择预设模板快速配置，或从空白开始</p>
-          </div>
-          <div className="p-3 grid grid-cols-2 gap-2 max-h-[400px] overflow-auto">
-            {TEMPLATES.map((t) => (
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">添加供应商</h3>
+            {/* Tab 切换 */}
+            <div className="flex gap-1 mt-2">
               <button
-                key={t.name}
-                onClick={() => selectTemplate(t)}
-                className="flex flex-col items-start p-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-sm hover:border-[#007fd4] hover:bg-[var(--bg-hover)] transition-colors text-left"
+                onClick={() => setTab("templates")}
+                className={`px-3 h-6 text-[11px] rounded-md transition-colors ${
+                  tab === "templates"
+                    ? "bg-[var(--accent)]/10 text-[var(--accent)] font-medium"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                }`}
               >
-                <span className="text-[13px] font-medium text-[var(--text-primary)]">{t.name}</span>
-                <span className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate w-full">{t.baseUrl}</span>
-                <div className="flex gap-1 mt-1.5">
-                  {t.models.slice(0, 3).map((m) => (
-                    <span key={m.id} className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-1 rounded-sm">{m.name}</span>
-                  ))}
-                </div>
+                模板
               </button>
-            ))}
-            <button
-              onClick={() => setStep("form")}
-              className="flex flex-col items-center justify-center p-3 bg-[var(--bg-card)] border border-[var(--border)] border-dashed rounded-sm hover:border-[#007fd4] hover:bg-[var(--bg-hover)] transition-colors"
-            >
-              <Plus size={20} className="text-[var(--text-muted)]" />
-              <span className="text-[12px] text-[var(--text-muted)] mt-1">自定义</span>
-            </button>
+              {discovered.length > 0 && (
+                <button
+                  onClick={() => setTab("discovered")}
+                  className={`px-3 h-6 text-[11px] rounded-md transition-colors ${
+                    tab === "discovered"
+                      ? "bg-[var(--accent)]/10 text-[var(--accent)] font-medium"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  已有配置 ({discovered.length})
+                </button>
+              )}
+            </div>
           </div>
+
+          {tab === "discovered" ? (
+            <div className="p-3 space-y-2 max-h-[400px] overflow-auto">
+              {discovered.map((dp, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-sm">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-medium text-[var(--text-primary)]">
+                        {dp.preset_name ?? dp.name}
+                      </span>
+                      {dp.is_preset && (
+                        <span className="text-[9px] text-[#3fb950] bg-[#3fb9501a] px-1 rounded">预设</span>
+                      )}
+                      {!dp.is_preset && (
+                        <span className="text-[9px] text-[#d29922] bg-[#d299221a] px-1 rounded">自定义</span>
+                      )}
+                      {dp.has_key ? (
+                        <span className="text-[9px] text-[#3fb950]">Key ✓</span>
+                      ) : (
+                        <span className="text-[9px] text-[#f48771]">Key ✗</span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-[var(--text-muted)] font-mono">{dp.base_url}</span>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {dp.models.map((m) => (
+                        <span key={m.id} className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-1 rounded-sm">
+                          {m.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => importDiscovered(dp)}
+                    className="shrink-0 px-3 h-7 text-[11px] bg-[var(--accent)] text-white rounded-sm hover:opacity-90 transition-opacity"
+                  >
+                    导入
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-3 grid grid-cols-2 gap-2 max-h-[400px] overflow-auto">
+              {TEMPLATES.map((t) => (
+                <button
+                  key={t.name}
+                  onClick={() => selectTemplate(t)}
+                  className="flex flex-col items-start p-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-sm hover:border-[#007fd4] hover:bg-[var(--bg-hover)] transition-colors text-left"
+                >
+                  <span className="text-[13px] font-medium text-[var(--text-primary)]">{t.name}</span>
+                  <span className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate w-full">{t.baseUrl}</span>
+                  <div className="flex gap-1 mt-1.5">
+                    {t.models.slice(0, 3).map((m) => (
+                      <span key={m.id} className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-1 rounded-sm">{m.name}</span>
+                    ))}
+                  </div>
+                </button>
+              ))}
+              <button
+                onClick={() => setStep("form")}
+                className="flex flex-col items-center justify-center p-3 bg-[var(--bg-card)] border border-[var(--border)] border-dashed rounded-sm hover:border-[#007fd4] hover:bg-[var(--bg-hover)] transition-colors"
+              >
+                <Plus size={20} className="text-[var(--text-muted)]" />
+                <span className="text-[12px] text-[var(--text-muted)] mt-1">自定义</span>
+              </button>
+            </div>
+          )}
+
           <div className="px-4 py-2 border-t border-[var(--border-strong)] flex justify-end">
             <button onClick={onClose} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded-sm transition-colors">取消</button>
           </div>
@@ -936,31 +1038,17 @@ function AddProviderDialog({
             />
             <p className="text-[10px] text-[#5a5a5a] mt-0.5">写入 settings.json 的 env.{form.apiKeyEnv}</p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] text-[var(--text-muted)] mb-1">代理模式</label>
-              <select
-                value={form.proxyMode}
-                onChange={(e) => setForm({ ...form, proxyMode: e.target.value })}
-                className="w-full h-8 bg-[var(--bg-input)] border border-[var(--border)] rounded-sm px-2 text-[13px] text-[var(--text-primary)] focus:border-[#007fd4] outline-none"
-              >
-                {PROXY_MODES.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] text-[var(--text-muted)] mb-1">计费类型</label>
-              <select
-                value={form.billingType}
-                onChange={(e) => setForm({ ...form, billingType: e.target.value })}
-                className="w-full h-8 bg-[var(--bg-input)] border border-[var(--border)] rounded-sm px-2 text-[13px] text-[var(--text-primary)] focus:border-[#007fd4] outline-none"
-              >
-                {BILLING_TYPES.map((b) => (
-                  <option key={b.value} value={b.value}>{b.label}</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-[11px] text-[var(--text-muted)] mb-1">计费类型</label>
+            <select
+              value={form.billingType}
+              onChange={(e) => setForm({ ...form, billingType: e.target.value })}
+              className="w-full h-8 bg-[var(--bg-input)] border border-[var(--border)] rounded-sm px-2 text-[13px] text-[var(--text-primary)] focus:border-[#007fd4] outline-none"
+            >
+              {BILLING_TYPES.map((b) => (
+                <option key={b.value} value={b.value}>{b.label}</option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="px-4 py-2 border-t border-[var(--border-strong)] flex justify-end gap-2">

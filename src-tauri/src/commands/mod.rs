@@ -8,6 +8,7 @@ pub mod skill_marketplace;
 
 use rusqlite::Connection;
 use serde_json::{json, Map, Value};
+use std::fs;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -545,4 +546,203 @@ pub fn remove_statusline() -> Result<(), String> {
 
     config::set_by_path(&mut settings, "statusLine", Value::Null);
     config::write_settings(&settings_path, &settings)
+}
+
+// ── Provider Discovery ───────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct DiscoveredModel {
+    pub id: String,
+    pub name: String,
+    pub auth_type: Vec<String>,
+    pub valid: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct DiscoveredProvider {
+    pub name: String,
+    pub base_url: String,
+    pub protocol: String,       // "openai" | "anthropic" | "gemini"
+    pub env_key: String,
+    pub has_key: bool,
+    pub is_preset: bool,
+    pub preset_name: Option<String>,
+    pub models: Vec<DiscoveredModel>,
+    pub valid: bool,
+    pub error: Option<String>,
+}
+
+/// 发现 settings.json 中已有的供应商配置
+///
+/// 优先级：.env 文件 > settings.json env 对象 > 系统环境变量
+#[tauri::command]
+pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result<Vec<DiscoveredProvider>, String> {
+    let settings_path = config::user_settings_path();
+    if !settings_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let settings = config::read_settings(&settings_path)?;
+    let model_providers = match settings.get("modelProviders").and_then(|v| v.as_object()) {
+        Some(mp) => mp,
+        None => return Ok(vec![]),
+    };
+
+    // 构建 API Key 查找表（优先级：.env > settings.json env > 系统环境变量）
+    let mut key_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    // 1. 系统环境变量（最低优先级）
+    for (k, v) in std::env::vars() {
+        key_map.insert(k, v);
+    }
+
+    // 2. settings.json 的 env 对象
+    if let Some(env_obj) = settings.get("env").and_then(|v| v.as_object()) {
+        for (k, v) in env_obj {
+            if let Some(s) = v.as_str() {
+                key_map.insert(k.clone(), s.to_string());
+            }
+        }
+    }
+
+    // 3. .env 文件（最高优先级）
+    let env_path = config::env_file_path();
+    if env_path.exists() {
+        if let Ok(content) = fs::read_to_string(&env_path) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') { continue; }
+                if let Some((k, v)) = line.split_once('=') {
+                    key_map.insert(k.trim().to_string(), v.trim().to_string());
+                }
+            }
+        }
+    }
+
+    // 加载预设
+    let data_dir = crate::db::db_path(&std::path::PathBuf::from("."))
+        .parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let presets = crate::presets::load_presets(&data_dir);
+
+    // 构建预设匹配索引：(域名, 协议) → preset
+    let mut preset_index: std::collections::HashMap<(String, String), &crate::presets::ProviderPreset> =
+        std::collections::HashMap::new();
+    for preset in &presets {
+        let host = extract_host(&preset.base_url);
+        if host.is_empty() { continue; }
+        let proto = preset.models.first()
+            .and_then(|m| m.auth_type.first())
+            .cloned()
+            .unwrap_or_else(|| "openai".to_string());
+        preset_index.insert((host, proto), preset);
+    }
+
+    let mut discovered = Vec::new();
+
+    for (protocol, entries) in model_providers {
+        let entries_arr = match entries.as_array() {
+            Some(a) => a,
+            None => continue,
+        };
+
+        // 按 baseUrl 分组（同一 baseUrl 的多个 model 合并为一个供应商）
+        let mut groups: std::collections::HashMap<String, Vec<&Value>> = std::collections::HashMap::new();
+        for entry in entries_arr {
+            let url = entry.get("baseUrl").and_then(|v| v.as_str()).unwrap_or("");
+            groups.entry(url.to_string()).or_default().push(entry);
+        }
+
+        for (base_url, group_entries) in groups {
+            if base_url.is_empty() {
+                continue;
+            }
+
+            // 解析域名用于预设匹配
+            let host = extract_host(&base_url);
+
+            let env_key = group_entries.first()
+                .and_then(|e| e.get("envKey").and_then(|v| v.as_str()))
+                .unwrap_or("")
+                .to_string();
+
+            // 匹配预设
+            let matched_preset = preset_index.get(&(host.clone(), protocol.clone()));
+
+            // 解析 models
+            let mut models = Vec::new();
+            let mut seen_ids = std::collections::HashSet::new();
+            for entry in &group_entries {
+                let id = entry.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                if id.is_empty() || !seen_ids.insert(id.to_string()) {
+                    continue;
+                }
+                let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+                let auth_types: Vec<String> = if let Some(preset) = matched_preset {
+                    preset.models.iter()
+                        .find(|m| m.id == id)
+                        .map(|m| m.auth_type.clone())
+                        .unwrap_or_else(|| vec![protocol.clone()])
+                } else {
+                    vec![protocol.clone()]
+                };
+                models.push(DiscoveredModel {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    auth_type: auth_types,
+                    valid: true,
+                });
+            }
+
+            if models.is_empty() {
+                continue;
+            }
+
+            // 检查 API Key
+            let has_key = if let Some(custom_headers) = group_entries.first()
+                .and_then(|e| e.pointer("/generationConfig/customHeaders"))
+                .and_then(|v| v.as_object())
+            {
+                custom_headers.values().any(|v| {
+                    v.as_str().map(|s| !s.is_empty()).unwrap_or(false)
+                })
+            } else {
+                !env_key.is_empty() && key_map.get(&env_key).map(|v| !v.is_empty()).unwrap_or(false)
+            };
+
+            let name = if let Some(preset) = matched_preset {
+                preset.name.clone()
+            } else {
+                // 用域名作为自定义供应商名
+                host.clone()
+            };
+
+            discovered.push(DiscoveredProvider {
+                name,
+                base_url: base_url.clone(),
+                protocol: protocol.clone(),
+                env_key,
+                has_key,
+                is_preset: matched_preset.is_some(),
+                preset_name: matched_preset.map(|p| p.name.clone()),
+                models,
+                valid: true,
+                error: None,
+            });
+        }
+    }
+
+    Ok(discovered)
+}
+
+/// 从 URL 中提取域名（不依赖 url crate）
+fn extract_host(url: &str) -> String {
+    let s = url.trim();
+    let after_scheme = if let Some(pos) = s.find("://") {
+        &s[pos + 3..]
+    } else {
+        s
+    };
+    after_scheme.split('/').next().unwrap_or("")
+        .split(':').next().unwrap_or("")
+        .to_string()
 }

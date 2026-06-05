@@ -342,12 +342,12 @@ function MessageBubble({ msg }: { msg: SessionMessage }) {
   return (
     <div className={`flex gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] rounded-lg overflow-hidden ${
+        className={`max-w-[85%] rounded-lg overflow-hidden border border-[var(--border)] ${
           isUser
-            ? "border-l-[3px] border-[#58a6ff]"
+            ? "border-t-[2px] border-t-[#58a6ff]"
             : isSystem
-              ? "border-l-[3px] border-[var(--text-muted)]"
-              : "border-l-[3px] border-[#bc8cff]"
+              ? "border-t-[2px] border-t-[var(--text-muted)]"
+              : "border-t-[2px] border-t-[#bc8cff]"
         }`}
       >
         {/* 头部 */}
@@ -424,7 +424,7 @@ function MessageBubble({ msg }: { msg: SessionMessage }) {
 function ThinkingBlock({ content }: { content: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mx-3 mb-1.5 rounded border-l-[2px] border-[#bc8cff]/40 bg-[#bc8cff08]">
+    <div className="mx-3 mb-1.5 rounded-md border border-[#bc8cff]/20 bg-[#bc8cff08]">
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 w-full px-2 py-1 text-[10px] text-[#bc8cff] hover:bg-[#bc8cff10] transition-colors"
@@ -456,7 +456,7 @@ function ToolCallInline({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mx-3 mb-1.5 rounded border-l-[2px] border-[#d29922]/40 bg-[#d2992208]">
+    <div className="mx-3 mb-1.5 rounded-md border border-[#d29922]/20 bg-[#d2992208]">
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 w-full px-2 py-1 text-[10px] text-[#d29922] hover:bg-[#d2992210] transition-colors"

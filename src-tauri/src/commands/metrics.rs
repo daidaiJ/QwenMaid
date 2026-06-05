@@ -121,7 +121,9 @@ fn query_request_logs(
 ) -> Result<Vec<(String, String, i64, i64, i64, i64)>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT date(timestamp), model_id,
+            "SELECT strftime('%Y-%m-%d %H:%M', timestamp,
+                       '-' || (CAST(strftime('%M', timestamp) AS INTEGER) % 30) || ' minutes'),
+                    model_id,
                     COALESCE(SUM(input_tokens), 0),
                     COALESCE(SUM(output_tokens), 0),
                     COALESCE(SUM(cache_read_tokens), 0),
@@ -129,7 +131,7 @@ fn query_request_logs(
              FROM request_logs
              WHERE timestamp >= datetime('now', '-' || ?1 || ' days')
                AND model_id IS NOT NULL AND model_id != ''
-             GROUP BY date(timestamp), model_id",
+             GROUP BY 1, model_id",
         )
         .map_err(|e| e.to_string())?;
 
@@ -205,10 +207,16 @@ fn query_call_records(days: u32) -> Result<HashMap<(String, String), CallRecordD
     let completion_tok_col = find_col(&columns, &["completion_tokens", "output_tokens"]);
     let cached_tok_col = find_col(&columns, &["cached_tokens", "cache_read_tokens"]);
 
-    // 构建动态查询
+    // 构建动态查询 — 30 分钟粒度
+    // 注意：recorded_at 可能是 Go 格式（含时区/单调时钟），strftime 无法解析
+    // 安全做法：用 SUBSTR 截取前 16 字符 "YYYY-MM-DD HH:MM"，再截断分钟
     let date_expr = match date_col.as_deref() {
-        Some("recorded_at") => "SUBSTR(recorded_at, 1, 10)".to_string(),
-        Some(c) => format!("DATE({})", c),
+        Some(c) => format!(
+            "CASE WHEN LENGTH({0}) >= 16 AND CAST(SUBSTR({0}, 16, 2) AS INTEGER) IS NOT NULL \
+             THEN SUBSTR({0}, 1, 14) || CASE WHEN CAST(SUBSTR({0}, 16, 2) AS INTEGER) < 30 THEN '00' ELSE '30' END \
+             ELSE DATE({0}) END",
+            c
+        ),
         None => "NULL".to_string(),
     };
     let model_expr = model_col.as_deref().unwrap_or("NULL").to_string();
@@ -222,7 +230,7 @@ fn query_call_records(days: u32) -> Result<HashMap<(String, String), CallRecordD
     let cached_expr = cached_tok_col.as_deref().unwrap_or("0").to_string();
 
     let sql = format!(
-        "SELECT {}, {}, {}, {}, {}, {}, {} FROM call_records WHERE SUBSTR({}, 1, 10) >= SUBSTR(datetime('now', '-' || ?1 || ' days'), 1, 10)",
+        "SELECT {}, {}, {}, {}, {}, {}, {} FROM call_records WHERE {} >= datetime('now', '-' || ?1 || ' days')",
         date_expr, model_expr, latency_expr, tps_expr,
         prompt_expr, completion_expr, cached_expr,
         date_col.as_deref().unwrap_or("recorded_at")
@@ -421,7 +429,9 @@ pub fn get_proxy_detail_stats(
     // 查询 request_logs 的 token + 延迟数据
     let mut stmt = db
         .prepare(
-            "SELECT date(timestamp), model_id,
+            "SELECT strftime('%Y-%m-%d %H:%M', timestamp,
+                       '-' || (CAST(strftime('%M', timestamp) AS INTEGER) % 30) || ' minutes'),
+                    model_id,
                     COALESCE(SUM(input_tokens), 0),
                     COALESCE(SUM(output_tokens), 0),
                     COALESCE(SUM(cache_read_tokens), 0),
@@ -432,7 +442,7 @@ pub fn get_proxy_detail_stats(
              WHERE timestamp >= datetime('now', '-' || ?1 || ' days')
                AND model_id IS NOT NULL AND model_id != ''
                AND status_code >= 200 AND status_code < 400
-             GROUP BY date(timestamp), model_id",
+             GROUP BY 1, model_id",
         )
         .map_err(|e| e.to_string())?;
 

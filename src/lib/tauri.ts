@@ -106,6 +106,31 @@ export const syncConfigToSettings = () =>
 export const previewSyncConfig = () =>
   invoke<Record<string, unknown>>("preview_sync_config");
 
+// ── Provider Discovery ───────────────────────────────────
+
+export interface DiscoveredModel {
+  id: string;
+  name: string;
+  auth_type: string[];
+  valid: boolean;
+}
+
+export interface DiscoveredProvider {
+  name: string;
+  base_url: string;
+  protocol: string;
+  env_key: string;
+  has_key: boolean;
+  is_preset: boolean;
+  preset_name: string | null;
+  models: DiscoveredModel[];
+  valid: boolean;
+  error: string | null;
+}
+
+export const discoverExistingProviders = () =>
+  invoke<DiscoveredProvider[]>("discover_existing_providers");
+
 // ── File System Commands ─────────────────────────────────
 
 export const revealInExplorer = (path: string) =>

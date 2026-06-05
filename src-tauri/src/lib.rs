@@ -90,6 +90,7 @@ pub fn run() {
             commands::get_mcp_stats,
             commands::inject_statusline,
             commands::remove_statusline,
+            commands::discover_existing_providers,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
