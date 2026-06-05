@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { getModelDetailStats, checkUsageDb } from "@/lib/tauri";
+import { getModelDetailStats, getProxyDetailStats, checkUsageDb } from "@/lib/tauri";
 import type { ModelDetailData, UsageDbInfo } from "@/lib/tauri";
-import { Loader2, Cpu, Zap } from "lucide-react";
+import { Loader2, Cpu, Zap, Server } from "lucide-react";
+
+type DataSource = "usage" | "proxy";
 
 export function AnalyticsDetail() {
   const [data, setData] = useState<ModelDetailData | null>(null);
@@ -11,14 +13,15 @@ export function AnalyticsDetail() {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [days, setDays] = useState(30);
   const [granularity, setGranularity] = useState<"day" | "week">("day");
+  const [source, setSource] = useState<DataSource>("usage");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [d, info] = await Promise.all([
-        getModelDetailStats(days),
-        checkUsageDb(),
+        source === "proxy" ? getProxyDetailStats(days) : getModelDetailStats(days),
+        source === "usage" ? checkUsageDb() : Promise.resolve(null),
       ]);
       setData(d);
       setDbInfo(info);
@@ -28,7 +31,7 @@ export function AnalyticsDetail() {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [days, source]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -66,10 +69,12 @@ export function AnalyticsDetail() {
   if (!data || data.models.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-[var(--text-muted)]">
-        <Zap size={28} className="opacity-30" />
-        <span className="text-sm">暂无模型详情数据</span>
+        {source === "proxy" ? <Server size={28} className="opacity-30" /> : <Zap size={28} className="opacity-30" />}
+        <span className="text-sm">
+          {source === "proxy" ? "无代理请求记录" : "暂无模型详情数据"}
+        </span>
         {error && <span className="text-[11px] text-[var(--color-error)]">错误: {error}</span>}
-        {dbInfo && (
+        {source === "usage" && dbInfo && (
           <div className="text-[10px] font-mono bg-[var(--bg-sidebar)] border border-[var(--border)] rounded p-3 max-w-md space-y-1">
             <div>usage.db: {dbInfo.exists ? "✓ 存在" : "✗ 不存在"}</div>
             <div>表: {dbInfo.tables.length > 0 ? dbInfo.tables.join(", ") : "无"}</div>
@@ -88,7 +93,10 @@ export function AnalyticsDetail() {
           </div>
         )}
         <div className="text-[11px] text-center max-w-xs space-y-1">
-          <p>详情页需要代理层数据或 usage.db 中的 call_records 表</p>
+          {source === "proxy"
+            ? <p>请先开启本地路由代理并发送请求，代理层会自动记录 token 和延迟数据</p>
+            : <p>详情页需要代理层数据或 usage.db 中的 call_records 表</p>
+          }
         </div>
       </div>
     );
@@ -98,8 +106,34 @@ export function AnalyticsDetail() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* 左栏：模型选择 + 控制 */}
+      {/* 左栏：数据源切换 + 模型选择 + 控制 */}
       <div className="w-[220px] shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col">
+        {/* 数据源切换 Tab */}
+        <div className="flex border-b border-[var(--border)]">
+          <button
+            onClick={() => setSource("usage")}
+            className={`flex-1 flex items-center justify-center gap-1.5 h-8 text-[11px] font-medium transition-colors ${
+              source === "usage"
+                ? "text-[var(--accent)] border-b-2 border-[var(--accent)] bg-[var(--accent-light)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            }`}
+          >
+            <Zap size={12} />
+            状态行 usage
+          </button>
+          <button
+            onClick={() => setSource("proxy")}
+            className={`flex-1 flex items-center justify-center gap-1.5 h-8 text-[11px] font-medium transition-colors ${
+              source === "proxy"
+                ? "text-[var(--accent)] border-b-2 border-[var(--accent)] bg-[var(--accent-light)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            }`}
+          >
+            <Server size={12} />
+            本地路由代理
+          </button>
+        </div>
+
         <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">模型选择</span>
           <button onClick={toggleAll} className="text-[10px] text-[var(--accent)] hover:underline">
