@@ -117,11 +117,25 @@ pub fn run() {
 
             // 延迟启动代理服务器（不阻塞 setup）
             let db_for_proxy = db.clone();
+            let data_dir_for_proxy = data_dir.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
                 let client_pool = Arc::new(proxy::client_pool::ClientPool::new());
-                let compression_engine = Arc::new(proxy::compression::CompressionEngine::new_in_memory());
+
+                // 初始化 CCR 压缩引擎（SQLite 持久化，失败时降级为 in-memory）
+                let ccr_db_path = data_dir_for_proxy.join("ccr.db");
+                let compression_engine = match proxy::compression::CompressionEngine::new_sqlite(&ccr_db_path) {
+                    Ok(engine) => {
+                        log::info!("CCR compression engine initialized at {}", ccr_db_path.display());
+                        Arc::new(engine)
+                    }
+                    Err(e) => {
+                        log::warn!("CCR SQLite init failed ({}), using in-memory backend", e);
+                        Arc::new(proxy::compression::CompressionEngine::new_in_memory())
+                    }
+                };
+
                 let state = proxy::engine::ProxyState {
                     db: db_for_proxy,
                     client_pool,
