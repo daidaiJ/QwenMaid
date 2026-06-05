@@ -57,14 +57,6 @@ const panels: Record<PanelId, React.LazyExoticComponent<React.FC>> = {
   ),
 };
 
-function Placeholder({ text }: { text: string }) {
-  return (
-    <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
-      {text} — 即将实现
-    </div>
-  );
-}
-
 export function Shell() {
   const [active, setActive] = useState<PanelId>("cost");
   const [barWidth, setBarWidth] = useState(() => {

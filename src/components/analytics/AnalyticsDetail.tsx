@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { getModelDetailStats, getProxyDetailStats, checkUsageDb } from "@/lib/tauri";
-import type { ModelDetailData, UsageDbInfo } from "@/lib/tauri";
+import { getModelDetailStats, getProxyDetailStats } from "@/lib/tauri";
+import type { ModelDetailData } from "@/lib/tauri";
 import { Loader2, Cpu, Zap, Server } from "lucide-react";
 
 type DataSource = "usage" | "proxy";
@@ -8,30 +8,26 @@ type DataSource = "usage" | "proxy";
 export function AnalyticsDetail() {
   const [data, setData] = useState<ModelDetailData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [dbInfo, setDbInfo] = useState<UsageDbInfo | null>(null);
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [days, setDays] = useState(30);
   const [granularity, setGranularity] = useState<"day" | "week">("day");
   const [source, setSource] = useState<DataSource>("usage");
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    // 仅首次加载显示全屏 spinner，Tab 切换时保留旧数据
+    if (isInitialLoad) setLoading(true);
     try {
-      const [d, info] = await Promise.all([
-        source === "proxy" ? getProxyDetailStats(days) : getModelDetailStats(days),
-        source === "usage" ? checkUsageDb() : Promise.resolve(null),
-      ]);
+      const d = await (source === "proxy" ? getProxyDetailStats(days) : getModelDetailStats(days));
       setData(d);
-      setDbInfo(info);
       setSelectedModels(new Set(d.models.map((m) => m.model)));
-    } catch (e) {
-      setError(String(e));
+    } catch {
+      // 查询失败时 data 保持旧值，右侧面板显示空状态占位
     } finally {
       setLoading(false);
+      setIsInitialLoad(false);
     }
-  }, [days, source]);
+  }, [days, source, isInitialLoad]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -58,7 +54,7 @@ export function AnalyticsDetail() {
     return data.daily.filter((d) => selectedModels.has(d.model));
   }, [data, selectedModels]);
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 size={20} className="animate-spin text-[var(--text-muted)]" />
@@ -66,47 +62,12 @@ export function AnalyticsDetail() {
     );
   }
 
-  if (!data || data.models.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-[var(--text-muted)]">
-        {source === "proxy" ? <Server size={28} className="opacity-30" /> : <Zap size={28} className="opacity-30" />}
-        <span className="text-sm">
-          {source === "proxy" ? "无代理请求记录" : "暂无模型详情数据"}
-        </span>
-        {error && <span className="text-[11px] text-[var(--color-error)]">错误: {error}</span>}
-        {source === "usage" && dbInfo && (
-          <div className="text-[10px] font-mono bg-[var(--bg-sidebar)] border border-[var(--border)] rounded p-3 max-w-md space-y-1">
-            <div>usage.db: {dbInfo.exists ? "✓ 存在" : "✗ 不存在"}</div>
-            <div>表: {dbInfo.tables.length > 0 ? dbInfo.tables.join(", ") : "无"}</div>
-            {dbInfo.call_records_columns.length > 0 && (
-              <>
-                <div>call_records 列: {dbInfo.call_records_columns.join(", ")}</div>
-                <div>call_records 行数: {dbInfo.call_records_count}</div>
-              </>
-            )}
-            {dbInfo.sample_row && (
-              <details>
-                <summary className="cursor-pointer text-[var(--accent)]">查看样本行</summary>
-                <pre className="mt-1 text-[9px] whitespace-pre-wrap">{dbInfo.sample_row}</pre>
-              </details>
-            )}
-          </div>
-        )}
-        <div className="text-[11px] text-center max-w-xs space-y-1">
-          {source === "proxy"
-            ? <p>请先开启本地路由代理并发送请求，代理层会自动记录 token 和延迟数据</p>
-            : <p>详情页需要代理层数据或 usage.db 中的 call_records 表</p>
-          }
-        </div>
-      </div>
-    );
-  }
-
-  const summaryStats = computeSummary(data.models.filter((m) => selectedModels.has(m.model)));
+  const hasData = data && data.models.length > 0;
+  const summaryStats = hasData ? computeSummary(data.models.filter((m) => selectedModels.has(m.model))) : null;
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* 左栏：数据源切换 + 模型选择 + 控制 */}
+      {/* 左栏：数据源切换 + 模型选择 + 控制（始终渲染，保持 Tab 可切换） */}
       <div className="w-[220px] shrink-0 border-r border-[var(--border)] bg-[var(--bg-sidebar)] flex flex-col">
         {/* 数据源切换 Tab */}
         <div className="flex border-b border-[var(--border)]">
@@ -134,35 +95,39 @@ export function AnalyticsDetail() {
           </button>
         </div>
 
-        <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">模型选择</span>
-          <button onClick={toggleAll} className="text-[10px] text-[var(--accent)] hover:underline">
-            {selectedModels.size === data.models.length ? "全不选" : "全选"}
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-auto py-1">
-          {data.models.map((m) => (
-            <div
-              key={m.model}
-              onClick={() => toggleModel(m.model)}
-              className="flex items-start gap-2 px-3 py-1.5 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
-            >
-              <input
-                type="checkbox"
-                checked={selectedModels.has(m.model)}
-                onChange={() => toggleModel(m.model)}
-                className="mt-0.5 accent-[var(--accent)]"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="text-[11px] font-mono text-[var(--text-primary)] truncate">{shortModel(m.model)}</div>
-                <div className="text-[9px] text-[var(--text-muted)]">
-                  {m.total_requests.toLocaleString()} req · {fmtTok(m.total_input + m.total_output)}
-                </div>
-              </div>
+        {hasData && (
+          <>
+            <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">模型选择</span>
+              <button onClick={toggleAll} className="text-[10px] text-[var(--accent)] hover:underline">
+                {selectedModels.size === data.models.length ? "全不选" : "全选"}
+              </button>
             </div>
-          ))}
-        </div>
+
+            <div className="flex-1 overflow-auto py-1">
+              {data.models.map((m) => (
+                <div
+                  key={m.model}
+                  onClick={() => toggleModel(m.model)}
+                  className="flex items-start gap-2 px-3 py-1.5 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedModels.has(m.model)}
+                    onChange={() => toggleModel(m.model)}
+                    className="mt-0.5 accent-[var(--accent)]"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-mono text-[var(--text-primary)] truncate">{shortModel(m.model)}</div>
+                    <div className="text-[9px] text-[var(--text-muted)]">
+                      {m.total_requests.toLocaleString()} req · {fmtTok(m.total_input + m.total_output)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="border-t border-[var(--border)] p-2 space-y-2">
           <select
@@ -196,7 +161,11 @@ export function AnalyticsDetail() {
             <span className="text-[12px] font-medium text-[var(--text-primary)]">Token 用量趋势</span>
           </div>
           <div className="px-4 py-3">
-            <TokenAreaChart daily={filteredDaily} selectedModels={selectedModels} granularity={granularity} />
+            {hasData ? (
+              <TokenAreaChart daily={filteredDaily} selectedModels={selectedModels} granularity={granularity} />
+            ) : (
+              <EmptyChartPlaceholder message={source === "proxy" ? "无代理请求记录" : "暂无模型详情数据"} />
+            )}
           </div>
         </div>
 
@@ -207,23 +176,40 @@ export function AnalyticsDetail() {
             <span className="text-[12px] font-medium text-[var(--text-primary)]">性能指标</span>
           </div>
           <div className="px-4 py-3">
-            <PerfLineChart
-              daily={filteredDaily}
-              selectedModels={selectedModels}
-              granularity={granularity}
-              hasPerfData={data.models.some((m) => m.avg_tps > 0)}
-            />
+            {hasData ? (
+              <PerfLineChart
+                daily={filteredDaily}
+                selectedModels={selectedModels}
+                granularity={granularity}
+                hasPerfData={data.models.some((m) => m.avg_tps > 0)}
+              />
+            ) : (
+              <EmptyChartPlaceholder message={source === "proxy" ? "无代理请求记录" : "暂无模型详情数据"} />
+            )}
           </div>
         </div>
 
         {/* 汇总统计卡片 */}
         <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-          <MiniStat label="总请求" value={summaryStats.totalRequests.toLocaleString()} color="#58a6ff" />
-          <MiniStat label="总 Token" value={fmtTok(summaryStats.totalTokens)} color="#d29922" />
-          <MiniStat label="缓存率" value={`${(summaryStats.cacheRate * 100).toFixed(1)}%`} color="#bc8cff" />
-          <MiniStat label="平均 TPS" value={summaryStats.avgTps.toFixed(1)} color="#d29922" />
-          <MiniStat label="P50 延迟" value={`${summaryStats.p50Latency.toFixed(0)}ms`} color="#3fb950" />
-          <MiniStat label="P95 延迟" value={`${summaryStats.p95Latency.toFixed(0)}ms`} color="#f48771" />
+          {hasData ? (
+            <>
+              <MiniStat label="总请求" value={summaryStats!.totalRequests.toLocaleString()} color="#58a6ff" />
+              <MiniStat label="总 Token" value={fmtTok(summaryStats!.totalTokens)} color="#d29922" />
+              <MiniStat label="缓存率" value={`${(summaryStats!.cacheRate * 100).toFixed(1)}%`} color="#bc8cff" />
+              <MiniStat label="平均 TPS" value={summaryStats!.avgTps.toFixed(1)} color="#d29922" />
+              <MiniStat label="P50 延迟" value={`${summaryStats!.p50Latency.toFixed(0)}ms`} color="#3fb950" />
+              <MiniStat label="P95 延迟" value={`${summaryStats!.p95Latency.toFixed(0)}ms`} color="#f48771" />
+            </>
+          ) : (
+            <>
+              <MiniStat label="总请求" value="--" color="#58a6ff" />
+              <MiniStat label="总 Token" value="--" color="#d29922" />
+              <MiniStat label="缓存率" value="--" color="#bc8cff" />
+              <MiniStat label="平均 TPS" value="--" color="#d29922" />
+              <MiniStat label="P50 延迟" value="--" color="#3fb950" />
+              <MiniStat label="P95 延迟" value="--" color="#f48771" />
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -476,6 +462,15 @@ function MiniStat({ label, value, color }: { label: string; value: string; color
     <div className="border border-[var(--border)] rounded-lg p-2.5 space-y-0.5">
       <div className="text-[9px] text-[var(--text-muted)] uppercase">{label}</div>
       <div className="text-[14px] font-mono font-semibold" style={{ color }}>{value}</div>
+    </div>
+  );
+}
+
+function EmptyChartPlaceholder({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-[160px] gap-2 text-[var(--text-muted)]">
+      <Zap size={20} className="opacity-20" />
+      <span className="text-[11px]">{message}</span>
     </div>
   );
 }
