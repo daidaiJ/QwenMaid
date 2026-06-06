@@ -1,9 +1,10 @@
 import { useRef, useCallback } from "react";
-import { Settings, Network, BarChart3, Puzzle, Search, BookOpen, Download, Package, MessageSquare, Bot, Info } from "lucide-react";
+import { Settings, Network, BarChart3, Puzzle, Search, BookOpen, Download, Package, MessageSquare, Bot, Info, Activity } from "lucide-react";
 
 export type PanelId =
   | "config"
   | "proxy"
+  | "proxy-status"
   | "cost"
   | "extensions"
   | "skills"
@@ -32,6 +33,7 @@ const items: { id: PanelId; icon: typeof Settings; label: string }[] = [
   { id: "sessions", icon: MessageSquare, label: "会话" },
   { id: "subagents", icon: Bot, label: "子 Agent" },
   { id: "install", icon: Download, label: "安装/更新" },
+  { id: "proxy-status", icon: Activity, label: "代理状态" },
   { id: "about", icon: Info, label: "关于" },
 ];
 
@@ -65,7 +67,7 @@ export function ActivityBar({ active, onSelect, width = 48, onResize }: Activity
 
   return (
     <nav
-      className="flex flex-col bg-[var(--bg-sidebar)] border-r border-[var(--border)] py-2 shrink-0 shadow-sm relative select-none"
+      className="flex flex-col bg-[var(--bg-sidebar)] py-2 shrink-0 shadow-[1px_0_3px_rgba(0,0,0,0.04)] relative select-none"
       style={{ width }}
     >
       {items.map(({ id, icon: Icon, label }) => (
@@ -73,9 +75,9 @@ export function ActivityBar({ active, onSelect, width = 48, onResize }: Activity
           key={id}
           title={label}
           onClick={() => onSelect(id)}
-          className={`flex items-center gap-2 mx-1 px-1 h-10 rounded-md transition-all duration-150 ${
+          className={`flex items-center gap-2 mx-1 px-1 h-10 rounded-lg transition-all duration-150 ${
             active === id
-              ? "bg-[var(--accent-light)] text-[var(--accent)] shadow-[var(--shadow-sm)]"
+              ? "bg-[var(--accent-light)] text-[var(--accent)]"
               : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
           } ${showLabel ? "justify-start" : "justify-center"}`}
         >

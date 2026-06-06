@@ -251,11 +251,11 @@ export function SessionsPanel() {
             )}
             {/* 技能 + 子智能体调用统计 */}
             <div className="px-4 space-y-2">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              <h4 className="text-xs font-semibold text-[var(--text-muted)]">
                 技能 & 子智能体
               </h4>
               <div className="flex gap-3">
-                <div className="flex-1 border border-[var(--border)] rounded-md p-2 text-center">
+                <div className="flex-1 rounded-lg bg-[var(--bg-card)] shadow-[var(--shadow-card)] p-2 text-center">
                   <div className="text-[10px] text-[var(--text-muted)]">技能调用</div>
                   <div className="text-[16px] font-mono font-semibold" style={{ color: "#bc8cff" }}>
                     {detail.skill_calls?.reduce((s, c) => s + c.count, 0) ?? 0}
@@ -264,7 +264,7 @@ export function SessionsPanel() {
                     <div key={sc.name} className="text-[9px] text-[var(--text-muted)] truncate">{sc.name} ×{sc.count}</div>
                   ))}
                 </div>
-                <div className="flex-1 border border-[var(--border)] rounded-md p-2 text-center">
+                <div className="flex-1 rounded-lg bg-[var(--bg-card)] shadow-[var(--shadow-card)] p-2 text-center">
                   <div className="text-[10px] text-[var(--text-muted)]">子智能体</div>
                   <div className="text-[16px] font-mono font-semibold" style={{ color: "#58a6ff" }}>
                     {detail.agent_calls?.reduce((s, c) => s + c.count, 0) ?? 0}
@@ -345,7 +345,7 @@ function MessageBubble({ msg }: { msg: SessionMessage }) {
   return (
     <div className={`flex gap-2 ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] rounded-lg overflow-hidden border border-[var(--border)] ${
+        className={`max-w-[85%] rounded-xl overflow-hidden shadow-[var(--shadow-card)] ${
           isUser
             ? "border-t-[2px] border-t-[#58a6ff]"
             : isSystem
@@ -427,7 +427,7 @@ function MessageBubble({ msg }: { msg: SessionMessage }) {
 function ThinkingBlock({ content }: { content: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mx-3 mb-1.5 rounded-md border border-[#bc8cff]/20 bg-[#bc8cff08]">
+    <div className="mx-3 mb-1.5 rounded-lg border border-[#bc8cff]/20 bg-[#bc8cff08]">
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 w-full px-2 py-1 text-[10px] text-[#bc8cff] hover:bg-[#bc8cff10] transition-colors"
@@ -459,7 +459,7 @@ function ToolCallInline({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mx-3 mb-1.5 rounded-md border border-[#d29922]/20 bg-[#d2992208]">
+    <div className="mx-3 mb-1.5 rounded-lg border border-[#d29922]/20 bg-[#d2992208]">
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 w-full px-2 py-1 text-[10px] text-[#d29922] hover:bg-[#d2992210] transition-colors"
@@ -490,7 +490,7 @@ function ToolCallStats({ toolCalls, title = "工具调用分布", color = "#d299
   const max = toolCalls[0]?.count ?? 1;
   return (
     <div className="px-4">
-      <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+      <h4 className="text-xs font-semibold text-[var(--text-muted)] mb-2">
         {title}
       </h4>
       <div className="space-y-1">

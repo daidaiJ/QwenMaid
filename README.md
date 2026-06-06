@@ -92,3 +92,15 @@ npm run tauri build  # 构建
 ## 许可证
 
 MIT
+
+## 测试
+
+```bash
+# 单元测试（默认，不含集成测试）
+cd src-tauri && cargo test --lib
+
+# 含集成测试（启动 in-process mock 服务器，验证完整代理链路）
+cd src-tauri && cargo test --lib --features integration
+```
+
+集成测试覆盖：鉴权转换、SSE 流 usage 提取、缓存 token 捕获、上下文压缩收益、request_logs 写入等。全部自包含，无需外部服务。

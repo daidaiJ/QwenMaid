@@ -1,1 +1,1 @@
-{}
+{"main":{"identifier":"main","description":"Main window capabilities","local":true,"windows":["*"],"permissions":["core:default"]}}

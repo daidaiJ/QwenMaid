@@ -25,7 +25,7 @@ interface ResizableColumnsProps {
 
 function ResizeHandle() {
   return (
-    <Separator className="w-1 bg-[var(--border)]/50 hover:bg-[var(--accent)]/40 active:bg-[var(--accent)]/60 transition-colors cursor-col-resize" />
+    <Separator className="w-1 bg-transparent hover:bg-[var(--accent)]/30 active:bg-[var(--accent)]/50 transition-colors cursor-col-resize" />
   );
 }
 

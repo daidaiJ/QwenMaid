@@ -331,8 +331,8 @@ export function ProviderPanel() {
         className: "bg-[var(--bg-sidebar)] flex flex-col",
         children: (
           <>
-            <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">供应商</span>
+            <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border)]">
+              <span className="text-[12px] font-medium text-[var(--text-muted)]">供应商</span>
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={runDiscovery}
@@ -361,7 +361,7 @@ export function ProviderPanel() {
                 <button
                   key={p.id}
                   onClick={() => setSelected(p.id)}
-                  className={`w-full flex items-center gap-2 px-3 h-7 text-left text-[13px] transition-colors ${
+                  className={`w-full flex items-center gap-2 px-3 h-8 text-left text-[13px] transition-colors rounded-md mx-0.5 ${
                     selected === p.id
                       ? "bg-[var(--accent-light)] text-[var(--accent)] font-medium"
                       : "text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
@@ -551,7 +551,7 @@ function ProviderDetail({
       </div>
 
       {/* ── 本地代理开关（醒目卡片） ─────────────────── */}
-      <div className={`flex items-center justify-between p-3 rounded-md border transition-all ${
+      <div className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
         useLocalProxy
           ? "bg-[var(--accent-light)] border-[var(--accent)]/30 shadow-[0_0_0_1px_rgba(124,58,237,0.08),var(--shadow-sm)]"
           : "bg-[var(--bg-card)] border-[var(--border)] shadow-[var(--shadow-card)]"
@@ -645,7 +645,7 @@ function ProviderDetail({
       {/* 模型列表 */}
       <div className="border-t border-[var(--border)] pt-4">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[#bbbbbb] flex items-center gap-1.5">
+          <h3 className="text-[12px] font-medium text-[var(--text-muted)] flex items-center gap-1.5">
             <Cpu size={12} /> 模型 ({models.length})
           </h3>
           <button
@@ -716,7 +716,7 @@ function ModelRow({
   })();
 
   return (
-    <div className="bg-[var(--bg-card)] rounded-md shadow-[var(--shadow-card)] group hover:shadow-[var(--shadow-md)] transition-shadow">
+    <div className="bg-[var(--bg-card)] rounded-lg shadow-[var(--shadow-card)] group hover:shadow-[var(--shadow-md)] transition-shadow">
       {/* 行头 */}
       <div className="flex items-center gap-2 px-3 h-8 text-[13px]">
         <button
@@ -958,9 +958,9 @@ function AddProviderDialog({
   // 模板选择步骤
   if (step === "template") {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-overlay)]" onClick={onClose}>
-        <div className="bg-[var(--bg-panel)] rounded-md p-0 w-[480px] border border-[var(--border-strong)] shadow-[var(--shadow-dialog)]" onClick={(e) => e.stopPropagation()}>
-          <div className="px-4 py-3 border-b border-[var(--border-strong)]">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-sm" onClick={onClose}>
+        <div className="bg-[var(--bg-panel)] rounded-xl p-0 w-[480px] border border-[var(--border)] shadow-[var(--shadow-dialog)]" onClick={(e) => e.stopPropagation()}>
+          <div className="px-4 py-3 border-b border-[var(--border)]">
             <h3 className="text-sm font-medium text-[var(--text-primary)]">添加供应商</h3>
             {/* Tab 切换 */}
             <div className="flex gap-1 mt-2">
@@ -992,7 +992,7 @@ function AddProviderDialog({
           {tab === "discovered" ? (
             <div className="p-3 space-y-2 max-h-[400px] overflow-auto">
               {discovered.map((dp, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-sm">
+                <div key={i} className="flex items-start gap-3 p-3 bg-[var(--bg-card)] rounded-lg shadow-[var(--shadow-card)]">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-medium text-[var(--text-primary)]">
@@ -1042,7 +1042,7 @@ function AddProviderDialog({
                 <button
                   key={t.name}
                   onClick={() => selectTemplate(t)}
-                  className="flex flex-col items-start p-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-sm hover:border-[#007fd4] hover:bg-[var(--bg-hover)] transition-colors text-left"
+                  className="flex flex-col items-start p-3 bg-[var(--bg-card)] rounded-lg shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-md)] transition-all text-left"
                 >
                   <span className="text-[13px] font-medium text-[var(--text-primary)]">{t.name}</span>
                   <span className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate w-full">{t.baseUrl}</span>
@@ -1055,7 +1055,7 @@ function AddProviderDialog({
               ))}
               <button
                 onClick={() => setStep("form")}
-                className="flex flex-col items-center justify-center p-3 bg-[var(--bg-card)] border border-[var(--border)] border-dashed rounded-sm hover:border-[#007fd4] hover:bg-[var(--bg-hover)] transition-colors"
+                className="flex flex-col items-center justify-center p-3 bg-[var(--bg-card)] rounded-lg shadow-[var(--shadow-card)] border border-dashed border-[var(--border)] hover:bg-[var(--bg-hover)] transition-colors"
               >
                 <Plus size={20} className="text-[var(--text-muted)]" />
                 <span className="text-[12px] text-[var(--text-muted)] mt-1">自定义</span>
@@ -1063,8 +1063,8 @@ function AddProviderDialog({
             </div>
           )}
 
-          <div className="px-4 py-2 border-t border-[var(--border-strong)] flex justify-end">
-            <button onClick={onClose} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded-sm transition-colors">取消</button>
+          <div className="px-4 py-2 border-t border-[var(--border)] flex justify-end">
+            <button onClick={onClose} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-lg transition-colors">取消</button>
           </div>
         </div>
       </div>
@@ -1073,9 +1073,9 @@ function AddProviderDialog({
 
   // 表单步骤
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-overlay)]" onClick={onClose}>
-      <div className="bg-[var(--bg-panel)] rounded-md p-0 w-[420px] border border-[var(--border-strong)] shadow-[var(--shadow-dialog)]" onClick={(e) => e.stopPropagation()}>
-        <div className="px-4 py-3 border-b border-[var(--border-strong)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-[var(--bg-panel)] rounded-xl p-0 w-[420px] border border-[var(--border)] shadow-[var(--shadow-dialog)]" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-[var(--border)]">
           <h3 className="text-sm font-medium text-[var(--text-primary)]">
             {selectedTemplate ? `配置 ${selectedTemplate.name}` : "自定义供应商"}
           </h3>
@@ -1108,13 +1108,13 @@ function AddProviderDialog({
             </select>
           </div>
         </div>
-        <div className="px-4 py-2 border-t border-[var(--border-strong)] flex justify-end gap-2">
-          <button onClick={() => { setStep("template"); setSelectedTemplate(null); }} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded-sm transition-colors">返回</button>
-          <button onClick={onClose} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded-sm transition-colors">取消</button>
+        <div className="px-4 py-2 border-t border-[var(--border)] flex justify-end gap-2">
+          <button onClick={() => { setStep("template"); setSelectedTemplate(null); }} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-lg transition-colors">返回</button>
+          <button onClick={onClose} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-lg transition-colors">取消</button>
           <button
             onClick={submit}
             disabled={!form.name || !form.baseUrl}
-            className="px-3 h-7 text-xs bg-[var(--accent)] text-white rounded-sm hover:bg-[var(--accent-hover)] disabled:opacity-40 transition-colors"
+            className="px-3 h-7 text-xs bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-hover)] disabled:opacity-40 transition-colors"
           >
             创建{selectedTemplate ? ` (含 ${selectedTemplate.models.length} 个模型)` : ""}
           </button>
@@ -1163,9 +1163,9 @@ function AddModelDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-overlay)]" onClick={onClose}>
-      <div className="bg-[var(--bg-panel)] rounded-md p-0 w-[380px] border border-[var(--border-strong)] shadow-[var(--shadow-dialog)]" onClick={(e) => e.stopPropagation()}>
-        <div className="px-4 py-3 border-b border-[var(--border-strong)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-overlay)] backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-[var(--bg-panel)] rounded-xl p-0 w-[380px] border border-[var(--border)] shadow-[var(--shadow-dialog)]" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-[var(--border)]">
           <h3 className="text-sm font-medium text-[var(--text-primary)]">添加模型</h3>
         </div>
         <div className="p-4 space-y-3">
@@ -1192,9 +1192,9 @@ function AddModelDialog({
             设为默认模型
           </label>
         </div>
-        <div className="px-4 py-2 border-t border-[var(--border-strong)] flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded-sm transition-colors">取消</button>
-          <button onClick={submit} disabled={!form.modelId} className="px-3 h-7 text-xs bg-[var(--accent)] text-white rounded-sm hover:bg-[var(--accent-hover)] disabled:opacity-40 transition-colors">添加</button>
+        <div className="px-4 py-2 border-t border-[var(--border)] flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 h-7 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-lg transition-colors">取消</button>
+          <button onClick={submit} disabled={!form.modelId} className="px-3 h-7 text-xs bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-hover)] disabled:opacity-40 transition-colors">添加</button>
         </div>
       </div>
     </div>

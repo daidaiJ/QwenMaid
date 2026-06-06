@@ -15,6 +15,11 @@ const panels: Record<PanelId, React.LazyExoticComponent<React.FC>> = {
     }))
   ),
   proxy: ProviderPanel,
+  "proxy-status": lazy(() =>
+    import("@/components/proxy/ProxyStatusPanel").then((m) => ({
+      default: m.ProxyStatusPanel,
+    }))
+  ),
   cost: lazy(() =>
     import("@/components/analytics/AnalyticsPanel").then((m) => ({
       default: m.AnalyticsPanel,
@@ -79,7 +84,7 @@ export function Shell() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--bg-body)] text-[var(--text-primary)]">
       <div className="flex flex-1 min-h-0">
         <ActivityBar active={active} onSelect={setActive} width={barWidth} onResize={handleBarResize} />
-        <main className="flex-1 min-w-0 min-h-0 overflow-auto bg-[var(--bg-panel)] shadow-[var(--shadow-sm)]">
+        <main className="flex-1 min-w-0 min-h-0 overflow-auto bg-[var(--bg-panel)] rounded-tl-xl">
           <Suspense
             fallback={
               <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">

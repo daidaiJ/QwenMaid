@@ -83,7 +83,7 @@ export function ConfigPanel() {
       setSettings(data ?? {});
       setOriginal(data ?? {});
       setQwenPaths(paths);
-      setModelIds(models.map((m) => m.model_id));
+      setModelIds([...new Set(models.map((m) => m.model_id))]);
       setDirty(new Set());
     } catch {
       setSettings({});

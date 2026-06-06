@@ -986,6 +986,131 @@ pub fn sync_preset_models_to_settings(_state: tauri::State<'_, AppState>) -> Res
     Ok(added_count)
 }
 
+// ── Proxy Status Commands ────────────────────────────────
+
+const PROXY_PORT: u16 = 18900;
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ProxyStatus {
+    pub running: bool,
+    pub port: u16,
+    pub uptime_hint: String,
+}
+
+/// 检测代理服务是否在运行（TCP 连通性）
+#[tauri::command]
+pub async fn get_proxy_status() -> Result<ProxyStatus, String> {
+    let addr = format!("127.0.0.1:{}", PROXY_PORT);
+    let running = tokio::net::TcpStream::connect(&addr).await.is_ok();
+    Ok(ProxyStatus {
+        running,
+        port: PROXY_PORT,
+        uptime_hint: if running { "运行中" } else { "未启动" }.to_string(),
+    })
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ProviderModelStats {
+    pub provider_id: i64,
+    pub provider_name: String,
+    pub base_url: String,
+    pub model_id: String,
+    pub call_count: i64,
+    pub success_count: i64,
+    pub failure_count: i64,
+    pub total_input_tokens: i64,
+    pub total_output_tokens: i64,
+    pub avg_duration_ms: f64,
+    pub total_tokens_saved: i64,
+    pub compressed_count: i64,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ProxyProviderStats {
+    pub providers: Vec<ProviderModelStats>,
+    pub total_calls: i64,
+    pub total_failures: i64,
+    pub total_tokens_saved: i64,
+}
+
+/// 获取代理服务的供应商调用统计
+#[tauri::command]
+pub fn get_proxy_provider_stats(
+    state: tauri::State<'_, AppState>,
+    days: Option<u32>,
+) -> Result<ProxyProviderStats, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let days = days.unwrap_or(30);
+
+    let mut stmt = db
+        .prepare(
+            "SELECT
+                p.id, p.name, p.base_url,
+                r.model_id,
+                COUNT(*) as call_count,
+                SUM(CASE WHEN r.status_code >= 200 AND r.status_code < 400 THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN r.status_code >= 400 OR r.status_code IS NULL THEN 1 ELSE 0 END) as failure_count,
+                COALESCE(SUM(r.input_tokens), 0),
+                COALESCE(SUM(r.output_tokens), 0),
+                COALESCE(AVG(r.duration_ms), 0),
+                COALESCE(SUM(r.tokens_saved), 0),
+                SUM(CASE WHEN r.context_compressed = 1 THEN 1 ELSE 0 END)
+             FROM request_logs r
+             JOIN providers p ON r.provider_id = p.id
+             WHERE r.timestamp >= datetime('now', '-' || ?1 || ' days')
+             GROUP BY p.id, r.model_id
+             ORDER BY p.name, call_count DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![days], |row| {
+            Ok(ProviderModelStats {
+                provider_id: row.get(0)?,
+                provider_name: row.get(1)?,
+                base_url: row.get(2)?,
+                model_id: row.get(3)?,
+                call_count: row.get(4)?,
+                success_count: row.get(5)?,
+                failure_count: row.get(6)?,
+                total_input_tokens: row.get(7)?,
+                total_output_tokens: row.get(8)?,
+                avg_duration_ms: row.get(9)?,
+                total_tokens_saved: row.get(10)?,
+                compressed_count: row.get(11)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let providers: Vec<ProviderModelStats> = rows.filter_map(|r| r.ok()).collect();
+    let total_calls = providers.iter().map(|p| p.call_count).sum();
+    let total_failures = providers.iter().map(|p| p.failure_count).sum();
+    let total_tokens_saved = providers.iter().map(|p| p.total_tokens_saved).sum();
+
+    Ok(ProxyProviderStats {
+        providers,
+        total_calls,
+        total_failures,
+        total_tokens_saved,
+    })
+}
+
+/// 重置指定供应商的调用计数（删除该供应商的 request_logs）
+#[tauri::command]
+pub fn reset_provider_counts(
+    state: tauri::State<'_, AppState>,
+    provider_id: i64,
+) -> Result<u64, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let deleted = db
+        .execute(
+            "DELETE FROM request_logs WHERE provider_id = ?1",
+            [provider_id],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(deleted as u64)
+}
+
 /// 从 URL 中提取域名（不依赖 url crate）
 pub fn extract_host(url: &str) -> String {
     let s = url.trim();

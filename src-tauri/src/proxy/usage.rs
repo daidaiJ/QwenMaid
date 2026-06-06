@@ -52,8 +52,10 @@ impl UsageExtractor {
             Err(_) => return,
         };
 
+        let mut found_sse = false;
         for line in text.lines() {
             if let Some(data) = line.strip_prefix("data: ") {
+                found_sse = true;
                 if data == "[DONE]" {
                     continue;
                 }
@@ -66,6 +68,17 @@ impl UsageExtractor {
                     } else {
                         self.parse_openai_event(&json);
                     }
+                }
+            }
+        }
+
+        // 非流式响应：整个 chunk 是一个 JSON 对象，无 SSE data: 前缀
+        if !found_sse && contains_usage_hint(text) {
+            if let Ok(json) = serde_json::from_str::<Value>(text) {
+                if self.is_anthropic {
+                    self.parse_non_stream_anthropic(&json);
+                } else {
+                    self.parse_openai_event(&json);
                 }
             }
         }
@@ -131,6 +144,36 @@ impl UsageExtractor {
         }
     }
 
+    /// 解析 Anthropic 非流式 JSON 响应
+    ///
+    /// { usage: { input_tokens, output_tokens }, model, stop_reason }
+    fn parse_non_stream_anthropic(&mut self, json: &Value) {
+        if let Some(model) = json.get("model").and_then(|v| v.as_str()) {
+            self.snapshot.model = model.to_string();
+        }
+        if let Some(usage) = json.get("usage") {
+            self.snapshot.input_tokens = usage
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            self.snapshot.output_tokens = usage
+                .get("output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            self.snapshot.cache_read_tokens = usage
+                .get("cache_read_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            self.snapshot.cache_creation_tokens = usage
+                .get("cache_creation_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+        }
+        if let Some(sr) = json.get("stop_reason").and_then(|v| v.as_str()) {
+            self.snapshot.finish_reason = sr.to_string();
+        }
+    }
+
     /// 解析 OpenAI SSE 事件
     ///
     /// 最后一个 chunk 包含 usage 字段:
@@ -143,19 +186,26 @@ impl UsageExtractor {
 
         // usage 字段（通常在最后一个 chunk）
         if let Some(usage) = json.get("usage") {
+            // OpenAI Chat: prompt_tokens / completion_tokens
+            // OpenAI Responses: input_tokens / output_tokens
             self.snapshot.input_tokens = usage
                 .get("prompt_tokens")
+                .or_else(|| usage.get("input_tokens"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(self.snapshot.input_tokens);
             self.snapshot.output_tokens = usage
                 .get("completion_tokens")
+                .or_else(|| usage.get("output_tokens"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(self.snapshot.output_tokens);
-            // 某些供应商的 cache 字段
-            self.snapshot.cache_read_tokens = usage
-                .get("cached_tokens")
+            // OpenAI 标准格式: usage.prompt_tokens_details.cached_tokens
+            if let Some(cached) = usage
+                .get("prompt_tokens_details")
+                .and_then(|d| d.get("cached_tokens"))
                 .and_then(|v| v.as_u64())
-                .unwrap_or(self.snapshot.cache_read_tokens);
+            {
+                self.snapshot.cache_read_tokens = cached;
+            }
         }
 
         // finish_reason

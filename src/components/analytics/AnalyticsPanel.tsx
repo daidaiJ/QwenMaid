@@ -66,12 +66,12 @@ export function AnalyticsPanel() {
 
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <div className="flex items-center justify-between px-5 h-11 border-b border-[var(--border)] shrink-0">
+      <div className="flex items-center justify-between px-5 h-11 border-b border-[var(--border)] shrink-0 bg-[var(--bg-sidebar)]/30">
         <div className="flex items-center gap-1">
           <BarChart3 size={14} className="text-[var(--text-muted)] mr-1" />
           <button
             onClick={() => setTab("overview")}
-            className={`px-3 h-7 text-[12px] rounded-md transition-colors ${
+            className={`px-3 h-7 text-[12px] rounded-lg transition-colors ${
               tab === "overview"
                 ? "bg-[var(--accent)]/10 text-[var(--accent)] font-medium"
                 : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
@@ -81,7 +81,7 @@ export function AnalyticsPanel() {
           </button>
           <button
             onClick={() => setTab("detail")}
-            className={`px-3 h-7 text-[12px] rounded-md transition-colors ${
+            className={`px-3 h-7 text-[12px] rounded-lg transition-colors ${
               tab === "detail"
                 ? "bg-[var(--accent)]/10 text-[var(--accent)] font-medium"
                 : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
@@ -96,7 +96,7 @@ export function AnalyticsPanel() {
         <button
           onClick={handleSync}
           disabled={syncing}
-          className="flex items-center gap-1.5 px-2.5 h-7 text-[11px] text-[var(--text-secondary)] border border-[var(--border)] rounded-md hover:bg-[var(--bg-hover)] disabled:opacity-40 transition-colors"
+          className="flex items-center gap-1.5 px-2.5 h-7 text-[11px] text-[var(--text-secondary)] rounded-lg hover:bg-[var(--bg-hover)] disabled:opacity-40 transition-colors"
         >
           <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
           {syncing ? "同步中…" : "同步数据"}
@@ -159,7 +159,7 @@ export function AnalyticsPanel() {
                     </div>
                   </Section>
                 )}
-                <div className="border border-[var(--border)] rounded-lg p-3 space-y-2">
+                <div className="border border-[var(--border)] rounded-xl p-3 space-y-2 bg-[var(--bg-card)]">
                   {(() => {
                     const inp = data.total_input_tokens;
                     const out = data.total_output_tokens;
@@ -238,7 +238,7 @@ export function AnalyticsPanel() {
 
 function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
   return (
-    <div className="border border-[var(--border)] rounded-lg px-5 py-3 flex items-center gap-2.5 flex-1 min-w-[120px]">
+    <div className="bg-[var(--bg-card)] rounded-xl shadow-[var(--shadow-card)] px-5 py-3 flex items-center gap-2.5 flex-1 min-w-[120px]">
       <span style={{ color }} className="opacity-70 shrink-0">{icon}</span>
       <span className="text-[11px] text-[var(--text-muted)] shrink-0">{label}</span>
       <span className="text-[17px] font-mono font-semibold text-[var(--text-primary)] ml-auto">{value}</span>
@@ -248,8 +248,8 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
 
 function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="border border-[var(--border)] rounded-lg overflow-hidden min-w-0">
-      <div className="flex items-center gap-2 px-4 h-9 bg-[var(--bg-sidebar)]">
+    <div className="bg-[var(--bg-card)] rounded-xl shadow-[var(--shadow-card)] overflow-hidden min-w-0">
+      <div className="flex items-center gap-2 px-4 h-9 bg-[var(--bg-sidebar)]/50">
         <span className="text-[var(--text-muted)]">{icon}</span>
         <span className="text-[12px] font-medium text-[var(--text-primary)]">{title}</span>
       </div>

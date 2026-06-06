@@ -4,7 +4,7 @@ import { revealInExplorer } from "@/lib/tauri";
 
 // ── 输入框通用样式 ───────────────────────────────────────
 const inputCls =
-  "h-9 bg-[var(--bg-input)] border border-[var(--border)] rounded-md px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:shadow-[0_0_0_2px_rgba(124,58,237,0.15)] outline-none transition-all shadow-sm";
+  "h-[34px] bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:shadow-[var(--shadow-focus)] outline-none transition-all";
 
 // ── Toggle 开关 ──────────────────────────────────────────
 
@@ -24,15 +24,15 @@ export function Toggle({
       aria-checked={value}
       disabled={disabled}
       onClick={() => onChange(!value)}
-      className={`relative inline-flex h-[22px] w-10 shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
+      className={`relative inline-flex h-[26px] w-12 shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
         value
           ? "bg-[var(--accent)] border-[var(--accent)]"
           : "bg-[var(--border-strong)] border-[var(--border-strong)]"
       } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
     >
       <span
-        className={`pointer-events-none block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
-          value ? "translate-x-[18px]" : "translate-x-[3px]"
+        className={`pointer-events-none block h-[18px] w-[18px] rounded-full bg-white shadow transition-transform ${
+          value ? "translate-x-[22px]" : "translate-x-[3px]"
         }`}
       />
     </button>
@@ -223,11 +223,11 @@ export function TagInput({
 
   return (
     <div ref={ref} className="relative">
-      <div className="flex flex-wrap gap-1.5 p-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-md min-h-[36px] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_2px_rgba(124,58,237,0.15)] transition-all shadow-sm">
+      <div className="flex flex-wrap gap-1.5 p-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-lg min-h-[38px] focus-within:border-[var(--accent)] focus-within:shadow-[var(--shadow-focus)] transition-all">
         {value.map((tag) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[var(--tag-bg)] text-[12px] text-[var(--text-primary)] rounded-sm"
+            className="inline-flex items-center gap-1 px-2 py-0.5 bg-[var(--tag-bg)] text-[12px] text-[var(--text-primary)] rounded-md"
           >
             <span className="font-mono text-[11px]">{tag}</span>
             <button
@@ -312,7 +312,7 @@ export function Field({
 export function Section({ title, description }: { title: string; description?: string }) {
   return (
     <div className="pt-4 pb-1">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">{title}</h3>
+      <h3 className="text-[13px] font-medium text-[var(--text-secondary)]">{title}</h3>
       {description && <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{description}</p>}
       <div className="mt-2 border-t border-[var(--border)]" />
     </div>
@@ -414,7 +414,7 @@ export function QuickPathNav({ entries }: { entries: PathEntry[] }) {
         <button
           key={e.path}
           onClick={() => revealInExplorer(e.path).catch(() => {})}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border)] rounded-md text-[11px] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)] hover:shadow-[var(--shadow-sm)] transition-all shadow-[var(--shadow-card)]"
+          className={`inline-flex items-center gap-1 px-2.5 py-1.5 bg-[var(--bg-card)] rounded-lg text-[11px] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--bg-hover)] transition-all shadow-[var(--shadow-card)]`}
           title={e.path}
         >
           {e.icon ?? <FolderOpen size={11} />}
