@@ -62,6 +62,31 @@ jobs:
           "
           sed -i "0,/^version = .*/s/^version = .*/version = \"${VERSION}\"/" src-tauri/Cargo.toml
 
+      - name: Pre-install NSIS (cached)
+        shell: pwsh
+        run: |
+          $nsisDir = Join-Path $env:USERPROFILE ".cache\tauri\NSIS"
+          if (!(Test-Path "$nsisDir\Bin\makensis.exe")) {
+            New-Item -ItemType Directory -Force -Path $nsisDir | Out-Null
+            $zip = Join-Path $env:RUNNER_TEMP "nsis.zip"
+            for ($i=1; $i -le 5; $i++) {
+              try {
+                Invoke-WebRequest -Uri "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip" -OutFile $zip -TimeoutSec 120
+                Expand-Archive -Path $zip -DestinationPath $nsisDir -Force
+                break
+              } catch { Write-Host "Attempt $i failed, retrying..."; Start-Sleep -Seconds (10 * $i) }
+            }
+          }
+          if (!(Test-Path "$nsisDir\Plugins\x86-unicode\nsis_tauri_utils.dll")) {
+            $dll = Join-Path $nsisDir "Plugins\x86-unicode\nsis_tauri_utils.dll"
+            for ($i=1; $i -le 5; $i++) {
+              try {
+                Invoke-WebRequest -Uri "https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll" -OutFile $dll -TimeoutSec 120
+                break
+              } catch { Write-Host "Attempt $i failed, retrying..."; Start-Sleep -Seconds (10 * $i) }
+            }
+          }
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
