@@ -28,6 +28,12 @@ pub struct ModelPreset {
     pub name: String,
     #[serde(rename = "authType")]
     pub auth_type: Vec<String>,
+    #[serde(rename = "contextWindowSize")]
+    pub context_window_size: Option<u64>,
+    #[serde(rename = "maxOutputTokens")]
+    pub max_output_tokens: Option<u64>,
+    #[serde(rename = "inputModalities")]
+    pub input_modalities: Option<Vec<String>>,
 }
 
 /// 预设版本元数据（用于更新检查）
@@ -138,5 +144,155 @@ mod tests {
         let presets: Vec<ProviderPreset> = serde_json::from_str(DEFAULT_PRESETS).unwrap();
         let mimo_anth = presets.iter().find(|p| p.name == "Xiaomi MiMo (Anthropic)").unwrap();
         assert_eq!(mimo_anth.auth_header.as_deref(), Some("api-key"));
+    }
+
+    #[test]
+    fn test_opencode_go_presets_valid() {
+        let presets: Vec<ProviderPreset> = serde_json::from_str(DEFAULT_PRESETS).unwrap();
+
+        // ── OpenCode Go (OpenAI) ──
+        let oc_openai = presets.iter().find(|p| p.name == "OpenCode Go (OpenAI)").unwrap();
+        assert_eq!(oc_openai.env_prefix, "OPENCODE_API_KEY");
+        let oc_openai_ids: Vec<&str> = oc_openai.models.iter().map(|m| m.id.as_str()).collect();
+        for expected in &["glm-5.1", "kimi-k2.6", "kimi-k2.5", "deepseek-v4-pro", "deepseek-v4-flash", "mimo-v2.5", "mimo-v2.5-pro"] {
+            assert!(oc_openai_ids.contains(expected), "OpenCode Go (OpenAI) 缺少模型: {}", expected);
+        }
+        // model ID 唯一性
+        let mut sorted = oc_openai_ids.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), oc_openai_ids.len(), "OpenCode Go (OpenAI) 存在重复 model ID");
+        // gap 文档要求的显式配置
+        let mimo25 = oc_openai.models.iter().find(|m| m.id == "mimo-v2.5").unwrap();
+        assert_eq!(mimo25.context_window_size, Some(1000000));
+        assert_eq!(mimo25.max_output_tokens, Some(128000));
+        let mimo25pro = oc_openai.models.iter().find(|m| m.id == "mimo-v2.5-pro").unwrap();
+        assert_eq!(mimo25pro.context_window_size, Some(1000000));
+        assert_eq!(mimo25pro.max_output_tokens, Some(128000));
+        let glm51 = oc_openai.models.iter().find(|m| m.id == "glm-5.1").unwrap();
+        assert_eq!(glm51.max_output_tokens, Some(131072));
+        let dspro = oc_openai.models.iter().find(|m| m.id == "deepseek-v4-pro").unwrap();
+        assert_eq!(dspro.max_output_tokens, Some(384000));
+        let kk26 = oc_openai.models.iter().find(|m| m.id == "kimi-k2.6").unwrap();
+        assert_eq!(kk26.max_output_tokens, Some(262144));
+
+        // ── OpenCode Go (Anthropic) ──
+        let oc_anth = presets.iter().find(|p| p.name == "OpenCode Go (Anthropic)").unwrap();
+        assert_eq!(oc_anth.env_prefix, "OPENCODE_API_KEY");
+        assert_eq!(oc_anth.auth_header.as_deref(), Some("x-api-key"));
+        let oc_anth_ids: Vec<&str> = oc_anth.models.iter().map(|m| m.id.as_str()).collect();
+        for expected in &["minimax-m3", "minimax-m2.7", "qwen3.7-max", "qwen3.6-plus"] {
+            assert!(oc_anth_ids.contains(expected), "OpenCode Go (Anthropic) 缺少模型: {}", expected);
+        }
+        let mut sorted = oc_anth_ids.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), oc_anth_ids.len(), "OpenCode Go (Anthropic) 存在重复 model ID");
+        // gap 文档要求的显式配置
+        let mm3 = oc_anth.models.iter().find(|m| m.id == "minimax-m3").unwrap();
+        assert_eq!(mm3.max_output_tokens, Some(512000));
+        let mm27 = oc_anth.models.iter().find(|m| m.id == "minimax-m2.7").unwrap();
+        assert_eq!(mm27.max_output_tokens, Some(196608));
+    }
+
+    #[test]
+    fn test_preset_model_config_json_from_discovery() {
+        // 模拟发现流程：从预设模型构建 config_json
+        let presets: Vec<ProviderPreset> = serde_json::from_str(DEFAULT_PRESETS).unwrap();
+        let oc_openai = presets.iter().find(|p| p.name == "OpenCode Go (OpenAI)").unwrap();
+        let mimo_model = oc_openai.models.iter().find(|m| m.id == "mimo-v2.5").unwrap();
+
+        // 构建 config_json（与 commands/mod.rs 中的逻辑一致）
+        let mut gen = serde_json::Map::new();
+        if let Some(cws) = mimo_model.context_window_size {
+            gen.insert("contextWindowSize".to_string(), serde_json::json!(cws));
+        }
+        if let Some(mot) = mimo_model.max_output_tokens {
+            gen.insert("samplingParams".to_string(), serde_json::json!({ "max_tokens": mot }));
+        }
+        if let Some(ref modalities) = mimo_model.input_modalities {
+            let mods: serde_json::Map<String, serde_json::Value> = modalities.iter()
+                .map(|m| (m.clone(), serde_json::Value::Bool(true)))
+                .collect();
+            gen.insert("modalities".to_string(), serde_json::Value::Object(mods));
+        }
+        let config_json = serde_json::to_string(&gen).unwrap();
+
+        // 验证 config_json 可被正确解析回 generationConfig
+        let parsed: serde_json::Value = serde_json::from_str(&config_json).unwrap();
+        assert_eq!(parsed["contextWindowSize"], serde_json::json!(1000000));
+        assert_eq!(parsed["samplingParams"]["max_tokens"], serde_json::json!(128000));
+        assert_eq!(parsed["modalities"]["text"], serde_json::json!(true));
+        assert_eq!(parsed["modalities"]["image"], serde_json::json!(true));
+        assert_eq!(parsed["modalities"]["audio"], serde_json::json!(true));
+        assert_eq!(parsed["modalities"]["video"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn test_dump_presets_for_review() {
+        // 将预设转换为 Qwen Code settings.json 的 modelProviders 格式输出
+        let presets: Vec<ProviderPreset> = serde_json::from_str(DEFAULT_PRESETS).unwrap();
+
+        let mut model_providers: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+        for preset in &presets {
+            for model in &preset.models {
+                for auth_type in &model.auth_type {
+                    let mut entry = serde_json::json!({
+                        "id": model.id,
+                        "name": model.name,
+                        "envKey": preset.env_prefix,
+                        "baseUrl": preset.base_url,
+                    });
+
+                    // 只有预设显式设置了字段才构建 generationConfig
+                    let mut gen = serde_json::Map::new();
+                    if let Some(cws) = model.context_window_size {
+                        gen.insert("contextWindowSize".to_string(), serde_json::json!(cws));
+                    }
+                    if let Some(mot) = model.max_output_tokens {
+                        gen.insert("samplingParams".to_string(), serde_json::json!({ "max_tokens": mot }));
+                    }
+                    if let Some(ref modalities) = model.input_modalities {
+                        let mods: serde_json::Map<String, serde_json::Value> = modalities.iter()
+                            .map(|m| (m.clone(), serde_json::Value::Bool(true)))
+                            .collect();
+                        gen.insert("modalities".to_string(), serde_json::Value::Object(mods));
+                    }
+                    // Anthropic 协议 + 非标准 authHeader → 注入 customHeaders
+                    if auth_type == "anthropic" {
+                        if let Some(ref header) = preset.auth_header {
+                            if header.to_lowercase() != "authorization" {
+                                let mut headers = serde_json::Map::new();
+                                headers.insert(header.clone(), serde_json::json!("sk-your-api-key-here"));
+                                gen.insert("customHeaders".to_string(), serde_json::Value::Object(headers));
+                            }
+                        }
+                    }
+                    if !gen.is_empty() {
+                        entry.as_object_mut().unwrap().insert(
+                            "generationConfig".to_string(),
+                            serde_json::Value::Object(gen),
+                        );
+                    }
+
+                    let list = model_providers
+                        .entry(auth_type.clone())
+                        .or_insert_with(|| serde_json::json!([]));
+                    list.as_array_mut().unwrap().push(entry);
+                }
+            }
+        }
+
+        let output = serde_json::json!({ "modelProviders": model_providers });
+        let pretty = serde_json::to_string_pretty(&output).unwrap();
+        let out_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("provider-presets-review.json");
+        std::fs::write(&out_path, &pretty).unwrap();
+
+        let content = std::fs::read_to_string(&out_path).unwrap();
+        assert!(!content.is_empty());
+        assert!(content.contains("customHeaders"));
     }
 }

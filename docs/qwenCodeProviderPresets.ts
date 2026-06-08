@@ -141,14 +141,14 @@ export const qwenCodeProviderPresets: QwenCodeProviderPreset[] = [
       {
         id: "gemini-3.5-flash",
         name: "Gemini 3.5 Flash",
-        contextWindowSize: 1048576,
+        contextWindowSize: 1000000,
         maxOutputTokens: 65536,
         inputModalities: ["text", "image", "pdf", "video", "audio"],
       },
       {
         id: "gemini-2.5-flash-lite",
         name: "Gemini 2.5 Flash Lite",
-        contextWindowSize: 1048576,
+        contextWindowSize: 1000000,
         maxOutputTokens: 65536,
         inputModalities: ["text", "image", "pdf", "video", "audio"],
       },
@@ -381,13 +381,13 @@ export const qwenCodeProviderPresets: QwenCodeProviderPreset[] = [
       {
         id: "mimo-v2.5-pro",
         name: "MiMo V2.5 Pro",
-        contextWindowSize: 1048576,
+        contextWindowSize: 1000000,
         maxOutputTokens: 131072,
       },
       {
         id: "mimo-v2.5",
         name: "MiMo V2.5",
-        contextWindowSize: 1048576,
+        contextWindowSize: 1000000,
         maxOutputTokens: 131072,
         inputModalities: ["text", "image"],
       },

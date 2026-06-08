@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: "npm"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -35,6 +36,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
+          shared-key: "release-windows"
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -44,6 +46,45 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Sync version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          node -e "
+            const fs = require('fs');
+            const conf = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            conf.version = '${VERSION}';
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+          sed -i "0,/^version = .*/s/^version = .*/version = \"${VERSION}\"/" src-tauri/Cargo.toml
+
+      - name: Cache NSIS
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LOCALAPPDATA }}/tauri/NSIS
+          key: nsis-3.11-tauri-utils-v0.5.3
+
+      - name: Pre-install NSIS
+        shell: bash
+        run: |
+          NSIS_DIR="$LOCALAPPDATA/tauri/NSIS"
+          mkdir -p "$NSIS_DIR"
+          if [ ! -f "$NSIS_DIR/Bin/makensis.exe" ]; then
+            curl --retry 5 --retry-delay 10 --retry-all-errors -fsSL \
+              -o "$RUNNER_TEMP/nsis.zip" \
+              "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip"
+            unzip -o "$RUNNER_TEMP/nsis.zip" -d "$NSIS_DIR"
+          fi
+          mkdir -p "$NSIS_DIR/Plugins/x86-unicode"
+          if [ ! -f "$NSIS_DIR/Plugins/x86-unicode/nsis_tauri_utils.dll" ]; then
+            curl --retry 5 --retry-delay 10 --retry-all-errors -fsSL \
+              -o "$NSIS_DIR/Plugins/x86-unicode/nsis_tauri_utils.dll" \
+              "https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll"
+          fi
 
       - name: Build and release
         uses: tauri-apps/tauri-action@v0

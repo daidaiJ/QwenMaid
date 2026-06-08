@@ -6,10 +6,34 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "gpt-5.5", "name": "GPT-5.5", "authType": ["openai"] },
-      { "id": "gpt-4o", "name": "GPT-4o", "authType": ["openai"] },
-      { "id": "gpt-4o-mini", "name": "GPT-4o Mini", "authType": ["openai"] },
-      { "id": "o3", "name": "o3", "authType": ["openai"] }
+      {
+        "id": "gpt-5.5",
+        "name": "gpt-5.5",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "gpt-4o",
+        "name": "gpt-4o",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "gpt-4o-mini",
+        "name": "gpt-4o-mini",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "o3",
+        "name": "o3",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -20,10 +44,38 @@
     "billingType": "pay_per_use",
     "authHeader": "x-api-key",
     "models": [
-      { "id": "claude-opus-4-8", "name": "Claude Opus 4.8", "authType": ["anthropic", "openai"] },
-      { "id": "claude-sonnet-4-5-20250929", "name": "Claude Sonnet 4.5", "authType": ["anthropic", "openai"] },
-      { "id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "authType": ["anthropic", "openai"] },
-      { "id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "authType": ["anthropic", "openai"] }
+      {
+        "id": "claude-opus-4-8",
+        "name": "claude-opus-4-8",
+        "authType": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "id": "claude-sonnet-4-5-20250929",
+        "name": "claude-sonnet-4-5-20250929",
+        "authType": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "id": "claude-sonnet-4-20250514",
+        "name": "claude-sonnet-4-20250514",
+        "authType": [
+          "anthropic",
+          "openai"
+        ]
+      },
+      {
+        "id": "claude-haiku-4-5-20251001",
+        "name": "claude-haiku-4-5-20251001",
+        "authType": [
+          "anthropic",
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -33,10 +85,38 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash", "authType": ["gemini", "openai"] },
-      { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "authType": ["gemini", "openai"] },
-      { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "authType": ["gemini", "openai"] },
-      { "id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite", "authType": ["gemini", "openai"] }
+      {
+        "id": "gemini-3.5-flash",
+        "name": "gemini-3.5-flash",
+        "authType": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "id": "gemini-2.5-pro",
+        "name": "gemini-2.5-pro",
+        "authType": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "id": "gemini-2.5-flash",
+        "name": "gemini-2.5-flash",
+        "authType": [
+          "gemini",
+          "openai"
+        ]
+      },
+      {
+        "id": "gemini-2.5-flash-lite",
+        "name": "gemini-2.5-flash-lite",
+        "authType": [
+          "gemini",
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -46,8 +126,22 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "authType": ["openai"] },
-      { "id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "authType": ["openai"] }
+      {
+        "id": "deepseek-v4-pro",
+        "name": "deepseek-v4-pro",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 384000
+      },
+      {
+        "id": "deepseek-v4-flash",
+        "name": "deepseek-v4-flash",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 384000
+      }
     ]
   },
   {
@@ -57,8 +151,22 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "glm-5.1", "name": "GLM-5.1", "authType": ["openai"] },
-      { "id": "glm-5", "name": "GLM-5", "authType": ["openai"] }
+      {
+        "id": "glm-5.1",
+        "name": "glm-5.1",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 131072
+      },
+      {
+        "id": "glm-5",
+        "name": "glm-5",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 131072
+      }
     ]
   },
   {
@@ -68,11 +176,41 @@
     "proxyMode": "direct",
     "billingType": "plan",
     "models": [
-      { "id": "qwen3-coder-plus", "name": "Qwen3 Coder Plus", "authType": ["openai"] },
-      { "id": "qwen3-max", "name": "Qwen3 Max", "authType": ["openai"] },
-      { "id": "qwen-max", "name": "Qwen Max", "authType": ["openai"] },
-      { "id": "qwen-plus", "name": "Qwen Plus", "authType": ["openai"] },
-      { "id": "qwen-turbo", "name": "Qwen Turbo", "authType": ["openai"] }
+      {
+        "id": "qwen3-coder-plus",
+        "name": "qwen3-coder-plus",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "qwen3-max",
+        "name": "qwen3-max",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "qwen-max",
+        "name": "qwen-max",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "qwen-plus",
+        "name": "qwen-plus",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "qwen-turbo",
+        "name": "qwen-turbo",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -82,8 +220,21 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "kimi-k2.6", "name": "Kimi K2.6", "authType": ["openai"] },
-      { "id": "moonshot-v1-auto", "name": "Moonshot V1 Auto", "authType": ["openai"] }
+      {
+        "id": "kimi-k2.6",
+        "name": "kimi-k2.6",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 262144
+      },
+      {
+        "id": "moonshot-v1-auto",
+        "name": "moonshot-v1-auto",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -94,7 +245,13 @@
     "billingType": "pay_per_use",
     "authHeader": "api-key",
     "models": [
-      { "id": "kimi-for-coding", "name": "Kimi For Coding", "authType": ["anthropic"] }
+      {
+        "id": "kimi-for-coding",
+        "name": "kimi-for-coding",
+        "authType": [
+          "anthropic"
+        ]
+      }
     ]
   },
   {
@@ -104,8 +261,20 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "step-3.5-flash-2603", "name": "Step 3.5 Flash 2603", "authType": ["openai"] },
-      { "id": "step-3.5-flash", "name": "Step 3.5 Flash", "authType": ["openai"] }
+      {
+        "id": "step-3.5-flash-2603",
+        "name": "step-3.5-flash-2603",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "step-3.5-flash",
+        "name": "step-3.5-flash",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -115,7 +284,13 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "MiniMax-M2.7", "name": "MiniMax M2.7", "authType": ["openai"] }
+      {
+        "id": "MiniMax-M2.7",
+        "name": "MiniMax-M2.7",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -125,7 +300,13 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "doubao-seed-2-0-code-preview-latest", "name": "Doubao Seed Code Preview", "authType": ["openai"] }
+      {
+        "id": "doubao-seed-2-0-code-preview-latest",
+        "name": "doubao-seed-2-0-code-preview-latest",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -135,7 +316,13 @@
     "proxyMode": "direct",
     "billingType": "plan",
     "models": [
-      { "id": "ark-code-latest", "name": "Ark Code Latest", "authType": ["openai"] }
+      {
+        "id": "ark-code-latest",
+        "name": "ark-code-latest",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -145,10 +332,53 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro", "authType": ["openai"] },
-      { "id": "mimo-v2-pro", "name": "MiMo V2 Pro", "authType": ["openai"] },
-      { "id": "mimo-v2.5", "name": "MiMo V2.5", "authType": ["openai"] },
-      { "id": "mimo-v2-omni", "name": "MiMo V2 Omni", "authType": ["openai"] }
+      {
+        "id": "mimo-v2.5-pro",
+        "name": "mimo-v2.5-pro",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000
+      },
+      {
+        "id": "mimo-v2-pro",
+        "name": "mimo-v2-pro",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000
+      },
+      {
+        "id": "mimo-v2.5",
+        "name": "mimo-v2.5",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ]
+      },
+      {
+        "id": "mimo-v2-omni",
+        "name": "mimo-v2-omni",
+        "authType": [
+          "openai"
+        ],
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "contextWindowSize": 262144,
+        "maxOutputTokens": 128000
+      }
     ]
   },
   {
@@ -159,10 +389,53 @@
     "billingType": "pay_per_use",
     "authHeader": "api-key",
     "models": [
-      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro (Anthropic)", "authType": ["anthropic"] },
-      { "id": "mimo-v2-pro", "name": "MiMo V2 Pro (Anthropic)", "authType": ["anthropic"] },
-      { "id": "mimo-v2.5", "name": "MiMo V2.5 (Anthropic)", "authType": ["anthropic"] },
-      { "id": "mimo-v2-omni", "name": "MiMo V2 Omni (Anthropic)", "authType": ["anthropic"] }
+      {
+        "id": "mimo-v2.5-pro",
+        "name": "mimo-v2.5-pro",
+        "authType": [
+          "anthropic"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000
+      },
+      {
+        "id": "mimo-v2-pro",
+        "name": "mimo-v2-pro",
+        "authType": [
+          "anthropic"
+        ],
+        "contextWindowSize": 1000000
+      },
+      {
+        "id": "mimo-v2.5",
+        "name": "mimo-v2.5",
+        "authType": [
+          "anthropic"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ]
+      },
+      {
+        "id": "mimo-v2-omni",
+        "name": "mimo-v2-omni",
+        "authType": [
+          "anthropic"
+        ],
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "contextWindowSize": 262144,
+        "maxOutputTokens": 128000
+      }
     ]
   },
   {
@@ -172,10 +445,53 @@
     "proxyMode": "direct",
     "billingType": "plan",
     "models": [
-      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro", "authType": ["openai"] },
-      { "id": "mimo-v2-pro", "name": "MiMo V2 Pro", "authType": ["openai"] },
-      { "id": "mimo-v2.5", "name": "MiMo V2.5", "authType": ["openai"] },
-      { "id": "mimo-v2-omni", "name": "MiMo V2 Omni", "authType": ["openai"] }
+      {
+        "id": "mimo-v2.5-pro",
+        "name": "mimo-v2.5-pro",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000
+      },
+      {
+        "id": "mimo-v2-pro",
+        "name": "mimo-v2-pro",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000
+      },
+      {
+        "id": "mimo-v2.5",
+        "name": "mimo-v2.5",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ]
+      },
+      {
+        "id": "mimo-v2-omni",
+        "name": "mimo-v2-omni",
+        "authType": [
+          "openai"
+        ],
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "contextWindowSize": 262144,
+        "maxOutputTokens": 128000
+      }
     ]
   },
   {
@@ -186,10 +502,53 @@
     "billingType": "plan",
     "authHeader": "api-key",
     "models": [
-      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro (Anthropic)", "authType": ["anthropic"] },
-      { "id": "mimo-v2-pro", "name": "MiMo V2 Pro (Anthropic)", "authType": ["anthropic"] },
-      { "id": "mimo-v2.5", "name": "MiMo V2.5 (Anthropic)", "authType": ["anthropic"] },
-      { "id": "mimo-v2-omni", "name": "MiMo V2 Omni (Anthropic)", "authType": ["anthropic"] }
+      {
+        "id": "mimo-v2.5-pro",
+        "name": "mimo-v2.5-pro",
+        "authType": [
+          "anthropic"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000
+      },
+      {
+        "id": "mimo-v2-pro",
+        "name": "mimo-v2-pro",
+        "authType": [
+          "anthropic"
+        ],
+        "contextWindowSize": 1000000
+      },
+      {
+        "id": "mimo-v2.5",
+        "name": "mimo-v2.5",
+        "authType": [
+          "anthropic"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ]
+      },
+      {
+        "id": "mimo-v2-omni",
+        "name": "mimo-v2-omni",
+        "authType": [
+          "anthropic"
+        ],
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "contextWindowSize": 262144,
+        "maxOutputTokens": 128000
+      }
     ]
   },
   {
@@ -199,7 +558,13 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "moonshotai/kimi-k2.5", "name": "Kimi K2.5 (Nvidia NIM)", "authType": ["openai"] }
+      {
+        "id": "moonshotai/kimi-k2.5",
+        "name": "moonshotai/kimi-k2.5",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -209,13 +574,55 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "xsparkx2", "name": "Spark X2", "authType": ["openai"] },
-      { "id": "xsparkx2flash", "name": "Spark X2 Flash", "authType": ["openai"] },
-      { "id": "xopglm51", "name": "GLM-5.1 (讯飞)", "authType": ["openai"] },
-      { "id": "xopdeepseekv4pro", "name": "DeepSeek V4 Pro (讯飞)", "authType": ["openai"] },
-      { "id": "xopkimik26", "name": "Kimi K2.6 (讯飞)", "authType": ["openai"] },
-      { "id": "xopqwen35397b", "name": "Qwen3.5-397B (讯飞)", "authType": ["openai"] },
-      { "id": "xop3qwencodernext", "name": "Qwen3-Coder-Next (讯飞)", "authType": ["openai"] }
+      {
+        "id": "xsparkx2",
+        "name": "xsparkx2",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "xsparkx2flash",
+        "name": "xsparkx2flash",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "xopglm51",
+        "name": "xopglm51",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "xopdeepseekv4pro",
+        "name": "xopdeepseekv4pro",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "xopkimik26",
+        "name": "xopkimik26",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "xopqwen35397b",
+        "name": "xopqwen35397b",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "xop3qwencodernext",
+        "name": "xop3qwencodernext",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   },
   {
@@ -225,14 +632,77 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "glm-5.1", "name": "GLM-5.1", "authType": ["openai"] },
-      { "id": "glm-5", "name": "GLM-5", "authType": ["openai"] },
-      { "id": "kimi-k2.6", "name": "Kimi K2.6", "authType": ["openai"] },
-      { "id": "kimi-k2.5", "name": "Kimi K2.5", "authType": ["openai"] },
-      { "id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "authType": ["openai"] },
-      { "id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "authType": ["openai"] },
-      { "id": "mimo-v2.5", "name": "MiMo V2.5", "authType": ["openai"] },
-      { "id": "mimo-v2.5-pro", "name": "MiMo V2.5 Pro", "authType": ["openai"] }
+      {
+        "id": "glm-5.1",
+        "name": "glm-5.1",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 131072
+      },
+      {
+        "id": "glm-5",
+        "name": "glm-5",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 131072
+      },
+      {
+        "id": "kimi-k2.6",
+        "name": "kimi-k2.6",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 262144
+      },
+      {
+        "id": "kimi-k2.5",
+        "name": "kimi-k2.5",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "deepseek-v4-pro",
+        "name": "deepseek-v4-pro",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 384000
+      },
+      {
+        "id": "deepseek-v4-flash",
+        "name": "deepseek-v4-flash",
+        "authType": [
+          "openai"
+        ],
+        "maxOutputTokens": 384000
+      },
+      {
+        "id": "mimo-v2.5",
+        "name": "mimo-v2.5",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000,
+        "inputModalities": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ]
+      },
+      {
+        "id": "mimo-v2.5-pro",
+        "name": "mimo-v2.5-pro",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000
+      }
     ]
   },
   {
@@ -243,12 +713,50 @@
     "billingType": "pay_per_use",
     "authHeader": "x-api-key",
     "models": [
-      { "id": "minimax-m3", "name": "MiniMax M3", "authType": ["anthropic"] },
-      { "id": "minimax-m2.7", "name": "MiniMax M2.7", "authType": ["anthropic"] },
-      { "id": "minimax-m2.5", "name": "MiniMax M2.5", "authType": ["anthropic"] },
-      { "id": "qwen3.7-max", "name": "Qwen 3.7 Max", "authType": ["anthropic"] },
-      { "id": "qwen3.7-plus", "name": "Qwen 3.7 Plus", "authType": ["anthropic"] },
-      { "id": "qwen3.6-plus", "name": "Qwen 3.6 Plus", "authType": ["anthropic"] }
+      {
+        "id": "minimax-m3",
+        "name": "minimax-m3",
+        "authType": [
+          "anthropic"
+        ],
+        "maxOutputTokens": 512000
+      },
+      {
+        "id": "minimax-m2.7",
+        "name": "minimax-m2.7",
+        "authType": [
+          "anthropic"
+        ],
+        "maxOutputTokens": 196608
+      },
+      {
+        "id": "minimax-m2.5",
+        "name": "minimax-m2.5",
+        "authType": [
+          "anthropic"
+        ]
+      },
+      {
+        "id": "qwen3.7-max",
+        "name": "qwen3.7-max",
+        "authType": [
+          "anthropic"
+        ]
+      },
+      {
+        "id": "qwen3.7-plus",
+        "name": "qwen3.7-plus",
+        "authType": [
+          "anthropic"
+        ]
+      },
+      {
+        "id": "qwen3.6-plus",
+        "name": "qwen3.6-plus",
+        "authType": [
+          "anthropic"
+        ]
+      }
     ]
   },
   {
@@ -258,11 +766,57 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
-      { "id": "anthropic/claude-opus-4.8", "name": "Claude Opus 4.8", "authType": ["openai"] },
-      { "id": "anthropic/claude-sonnet-4.6", "name": "Claude Sonnet 4.6", "authType": ["openai"] },
-      { "id": "openai/gpt-5.5", "name": "GPT-5.5", "authType": ["openai"] },
-      { "id": "google/gemini-3.5-flash", "name": "Gemini 3.5 Flash", "authType": ["openai"] },
-      { "id": "qwen/qwen3-coder-480b", "name": "Qwen3 Coder 480B", "authType": ["openai"] }
+      {
+        "id": "anthropic/claude-opus-4.8",
+        "name": "anthropic/claude-opus-4.8",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "anthropic/claude-sonnet-4.6",
+        "name": "anthropic/claude-sonnet-4.6",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "openai/gpt-5.5",
+        "name": "openai/gpt-5.5",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "google/gemini-3.5-flash",
+        "name": "google/gemini-3.5-flash",
+        "authType": [
+          "openai"
+        ]
+      },
+      {
+        "id": "qwen/qwen3-coder-480b",
+        "name": "qwen/qwen3-coder-480b",
+        "authType": [
+          "openai"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ModelScope (魔搭社区)",
+    "baseUrl": "https://api-inference.modelscope.cn/v1",
+    "envPrefix": "MODELSCOPE_API_KEY",
+    "proxyMode": "direct",
+    "billingType": "pay_per_use",
+    "models": [
+      {
+        "id": "ZhipuAI/GLM-5.1",
+        "name": "ZhipuAI/GLM-5.1",
+        "authType": [
+          "openai"
+        ]
+      }
     ]
   }
 ]

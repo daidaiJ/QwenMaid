@@ -518,9 +518,11 @@ function ToolCallStats({ toolCalls, title = "工具调用分布", color = "#d299
 // ── 工具函数 ─────────────────────────────────────────────
 
 function decodeProjectName(encoded: string): { dirName: string; fullPath: string } {
-  const fullPath = encoded.replace(/--/g, ":\\").replace(/-/g, "\\");
-  const parts = fullPath.replace(/[:/\\]+$/, "").split(/[\\/]/);
-  const dirName = parts[parts.length - 1] || fullPath;
+  const parts = encoded.split("--").filter(Boolean);
+  const dirName = (parts[parts.length - 1] || encoded).replace(/^-+/, "");
+  const fullPath = parts.length > 1
+    ? parts[0].toUpperCase() + ":\\" + parts.slice(1).join("\\")
+    : encoded;
   return { dirName, fullPath };
 }
 
