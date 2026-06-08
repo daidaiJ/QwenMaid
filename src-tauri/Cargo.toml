@@ -3,6 +3,10 @@ name = "qwenmaid"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+integration = []
+
 [lib]
 name = "qwenmaid_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

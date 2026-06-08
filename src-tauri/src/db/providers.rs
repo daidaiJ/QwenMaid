@@ -100,7 +100,7 @@ pub fn get_provider(conn: &Connection, id: i64) -> Result<Provider, String> {
 }
 
 pub fn create_provider(conn: &Connection, p: &CreateProvider) -> Result<Provider, String> {
-    let proxy_mode = p.proxy_mode.as_deref().unwrap_or("system");
+    let proxy_mode = p.proxy_mode.as_deref().unwrap_or("direct");
     let billing_type = p.billing_type.as_deref().unwrap_or("pay_per_use");
     let compress_enabled = p.compress_enabled.unwrap_or(false);
     conn.execute(

@@ -333,19 +333,45 @@ pub fn sync_providers_to_settings(
             if let Some(preset) = matched_preset {
                 if let Some(ref auth_header) = preset.auth_header {
                     if auth_header.to_lowercase() != "authorization" {
-                        if let Some(ref api_key) = provider.api_key_value {
-                            if !api_key.is_empty() {
-                                let gen = entry
-                                    .as_object_mut().unwrap()
-                                    .entry("generationConfig".to_string())
-                                    .or_insert_with(|| json!({}));
-                                if let Some(gen_obj) = gen.as_object_mut() {
-                                    let headers = gen_obj
-                                        .entry("customHeaders".to_string())
-                                        .or_insert_with(|| json!({}));
-                                    if let Some(h) = headers.as_object_mut() {
-                                        h.insert(auth_header.clone(), json!(api_key));
+                        // 优先 DB api_key_value，其次 settings.json env，最后 .env 文件
+                        let resolved_key: Option<String> = provider.api_key_value.as_deref()
+                            .filter(|k| !k.is_empty())
+                            .map(|s| s.to_string())
+                            .or_else(|| {
+                                settings.get("env")
+                                    .and_then(|e| e.get(&provider.api_key_env))
+                                    .and_then(|v| v.as_str())
+                                    .filter(|s| !s.is_empty())
+                                    .map(|s| s.to_string())
+                            })
+                            .or_else(|| {
+                                let env_path = crate::config::env_file_path();
+                                if env_path.exists() {
+                                    if let Ok(content) = std::fs::read_to_string(&env_path) {
+                                        for line in content.lines() {
+                                            let line = line.trim();
+                                            if line.is_empty() || line.starts_with('#') { continue; }
+                                            if let Some((k, v)) = line.split_once('=') {
+                                                if k.trim() == provider.api_key_env && !v.trim().is_empty() {
+                                                    return Some(v.trim().to_string());
+                                                }
+                                            }
+                                        }
                                     }
+                                }
+                                None
+                            });
+                        if let Some(api_key) = resolved_key {
+                            let gen = entry
+                                .as_object_mut().unwrap()
+                                .entry("generationConfig".to_string())
+                                .or_insert_with(|| json!({}));
+                            if let Some(gen_obj) = gen.as_object_mut() {
+                                let headers = gen_obj
+                                    .entry("customHeaders".to_string())
+                                    .or_insert_with(|| json!({}));
+                                if let Some(h) = headers.as_object_mut() {
+                                    h.insert(auth_header.clone(), json!(api_key));
                                 }
                             }
                         }

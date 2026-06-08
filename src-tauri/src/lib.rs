@@ -94,6 +94,9 @@ pub fn run() {
             commands::remove_statusline,
             commands::discover_existing_providers,
             commands::sync_preset_models_to_settings,
+            commands::get_proxy_status,
+            commands::get_proxy_provider_stats,
+            commands::reset_provider_counts,
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -148,6 +151,7 @@ pub fn run() {
                         std::env::var(env_name).ok()
                     }),
                     compression_engine,
+                    test_routes: None,
                 };
 
                 if let Err(e) = proxy::engine::start_proxy_server(18900, state).await {

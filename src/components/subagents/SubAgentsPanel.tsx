@@ -16,7 +16,7 @@ export function SubAgentsPanel() {
   const loadItems = useCallback(async (): Promise<ListItem[]> => {
     const agents = await listAgents();
     return agents.map((a) => ({
-      id: a.name,
+      id: a.path,  // 用文件路径作为 ID，避免 frontmatter name ≠ 文件名时找不到文件
       label: a.name,
       description: a.description,
       badge: a.model || undefined,
@@ -24,14 +24,14 @@ export function SubAgentsPanel() {
     }));
   }, []);
 
-  const handleSelect = useCallback(async (name: string | null) => {
-    setSelectedName(name);
-    if (!name) {
+  const handleSelect = useCallback(async (path: string | null) => {
+    setSelectedName(path);
+    if (!path) {
       setContent("");
       setFrontmatter("");
       return;
     }
-    const data = await readAgent(name);
+    const data = await readAgent(path);
     setFrontmatter(data.frontmatter);
     setContent(data.content);
   }, []);

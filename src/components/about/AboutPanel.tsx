@@ -29,7 +29,7 @@ export function AboutPanel() {
     <div className="h-full overflow-auto p-6 font-mono">
       <div className="max-w-2xl mx-auto space-y-5">
         {/* Header block — terminal style */}
-        <div className="p-4 rounded-lg bg-[var(--bg-sidebar)] border border-[var(--border)]">
+        <div className="p-4 rounded-xl bg-[var(--bg-card)] shadow-[var(--shadow-card)]">
           <div className="flex items-baseline gap-3">
             <span className="text-[var(--accent)] text-lg font-bold tracking-tight">QWenMaid</span>
             <span className="text-xs text-[var(--text-muted)]">v{APP_VERSION}</span>
@@ -49,7 +49,7 @@ export function AboutPanel() {
           href={REPO_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 py-2 px-3 rounded bg-[var(--bg-sidebar)] border border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[var(--accent)]/40 transition-colors group"
+          className="flex items-center gap-2 py-2 px-3 rounded-xl bg-[var(--bg-card)] shadow-[var(--shadow-card)] text-xs text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors group"
         >
           <Star size={13} className="text-amber-500 group-hover:fill-amber-500 transition-all" />
           <span className="font-mono">⭐ {REPO_URL.replace("https://", "")}</span>
@@ -65,7 +65,7 @@ export function AboutPanel() {
             {features.map((f) => (
               <div
                 key={f.title}
-                className="flex items-start gap-2.5 py-2 px-2.5 rounded bg-[var(--bg-sidebar)] border border-transparent hover:border-[var(--border)] transition-colors"
+                className="flex items-start gap-2.5 py-2 px-2.5 rounded-xl bg-[var(--bg-card)] shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-md)] transition-all"
               >
                 <f.icon size={14} style={{ color: f.color }} className="shrink-0 mt-0.5" />
                 <div className="min-w-0">
@@ -82,7 +82,7 @@ export function AboutPanel() {
           <h2 className="text-[10px] uppercase tracking-[0.15em] text-[var(--text-muted)] mb-2 flex items-center gap-1.5">
             <Code2 size={12} /> stack
           </h2>
-          <div className="p-3 rounded bg-[var(--bg-sidebar)] border border-[var(--border)] text-xs text-[var(--text-secondary)] leading-relaxed">
+          <div className="p-3 rounded-xl bg-[var(--bg-card)] shadow-[var(--shadow-card)] text-xs text-[var(--text-secondary)] leading-relaxed">
             <div><span className="text-[var(--accent)]">frontend</span> — React 19 · TypeScript · Vite 8 · Tailwind CSS 4 · shadcn/ui</div>
             <div><span className="text-[var(--accent)]">backend</span> — Rust · Tauri 2.x · SQLite (rusqlite) · axum</div>
             <div><span className="text-[var(--accent)]">compress</span> — only-cc-lite (零 ML 依赖上下文压缩)</div>
@@ -99,7 +99,7 @@ export function AboutPanel() {
                 href={d.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 py-1.5 px-3 rounded bg-[var(--bg-sidebar)] border border-transparent hover:border-[var(--border)] transition-colors group"
+                className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-[var(--bg-card)] shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-md)] transition-all group"
               >
                 <ExternalLink size={10} className="text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
                 <span className="text-xs text-[var(--accent)] group-hover:underline">{d.name}</span>
@@ -111,7 +111,7 @@ export function AboutPanel() {
         {/* Author */}
         <section>
           <h2 className="text-[10px] uppercase tracking-[0.15em] text-[var(--text-muted)] mb-2">author</h2>
-          <div className="p-3 rounded bg-[var(--bg-sidebar)] border border-[var(--border)] text-xs">
+          <div className="p-3 rounded-xl bg-[var(--bg-card)] shadow-[var(--shadow-card)] text-xs">
             <div className="flex items-baseline gap-3 mb-2">
               <span className="text-[var(--accent)] font-bold">daidaiJ</span>
               <span className="text-[var(--text-muted)]">🧊 冰可乐爱好者</span>

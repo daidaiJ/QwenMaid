@@ -159,8 +159,8 @@ export function GenericThreeColumnPanel({
         children: (
           <>
             {/* 标题栏 */}
-            <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            <div className="flex items-center justify-between px-3 h-10 border-b border-[var(--border)]">
+              <span className="text-[12px] font-medium text-[var(--text-muted)]">
                 {listTitle}
               </span>
               <div className="flex items-center gap-1">
@@ -186,7 +186,7 @@ export function GenericThreeColumnPanel({
             {/* 搜索框 */}
             {searchable && (
               <div className="px-2 py-1.5 border-b border-[var(--border)]">
-                <div className="flex items-center gap-1.5 h-7 bg-[var(--bg-input)] border border-[var(--border)] rounded-sm px-2">
+                <div className="flex items-center gap-1.5 h-7 bg-[var(--bg-input)] border border-[var(--border)] rounded-md px-2">
                   <Search size={12} className="text-[var(--text-muted)] shrink-0" />
                   <input
                     value={searchQuery}
@@ -222,7 +222,7 @@ export function GenericThreeColumnPanel({
                   return (
                     <div
                       key={item.id}
-                      className={`group flex items-center gap-2 px-3 h-8 text-[13px] transition-colors cursor-pointer ${
+                      className={`group flex items-center gap-2 px-3 h-9 text-[13px] transition-colors cursor-pointer ${
                         selected === item.id
                           ? "bg-[var(--accent-light)] text-[var(--accent)] font-medium"
                           : isGroup
@@ -248,7 +248,7 @@ export function GenericThreeColumnPanel({
                       <span className="truncate flex-1">{item.label}</span>
                       {item.badge && (
                         <span
-                          className="text-[9px] px-1 rounded shrink-0"
+                          className="text-[10px] px-1.5 py-0.5 rounded-md shrink-0"
                           style={{
                             color: item.badgeColor ?? "var(--text-muted)",
                             backgroundColor: `${item.badgeColor ?? "var(--text-muted)"}1a`,
@@ -378,7 +378,7 @@ export function MetadataSidebar({
 }) {
   return (
     <div className="p-4 space-y-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+      <h3 className="text-[12px] font-medium text-[var(--text-muted)]">
         {title}
       </h3>
       <div className="space-y-2">

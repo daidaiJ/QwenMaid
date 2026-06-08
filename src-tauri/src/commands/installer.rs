@@ -137,10 +137,10 @@ pub async fn install_qwen_code(window: Window, mirror: Option<String>) -> Result
     run_npm_lifecycle("install", mirror, window).await
 }
 
-/// 更新 Qwen Code（npm update -g），流式输出进度
+/// 更新 Qwen Code（npm install -g @latest），流式输出进度
 #[tauri::command]
 pub async fn update_qwen_code(window: Window, mirror: Option<String>) -> Result<String, String> {
-    run_npm_lifecycle("update", mirror, window).await
+    run_npm_lifecycle("install", mirror, window).await
 }
 
 /// 配置 npm 镜像源

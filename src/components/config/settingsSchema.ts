@@ -270,6 +270,25 @@ export const settingCategories: SettingCategory[] = [
         defaultValue: false,
         requiresRestart: true,
       },
+      // ── 压缩与截图 ──
+      {
+        path: "model.chatCompression.enableScreenshotTrigger",
+        label: "截图触发压缩",
+        type: "toggle",
+        description: "工具返回的截图数量达到阈值时自动压缩上下文，防止电脑截图场景下上下文溢出",
+        defaultValue: true,
+      },
+      {
+        path: "model.chatCompression.screenshotTriggerThreshold",
+        label: "截图压缩阈值",
+        type: "number",
+        description: "累积多少张工具截图后触发自动压缩",
+        defaultValue: 50,
+        min: 5,
+        max: 500,
+        step: 5,
+        unit: "张",
+      },
     ],
   },
 
@@ -280,8 +299,15 @@ export const settingCategories: SettingCategory[] = [
     id: "general",
     label: "通用",
     icon: "Settings",
-    description: "编辑器偏好、更新和会话行为",
+    description: "编辑器偏好、更新、网络代理和会话行为",
     fields: [
+      {
+        path: "proxy",
+        label: "网络代理",
+        type: "text",
+        description: "HTTP 代理地址，国内用户访问 API 时通常需要配置",
+        placeholder: "http://127.0.0.1:7890",
+      },
       {
         path: "general.preferredEditor",
         label: "首选编辑器",

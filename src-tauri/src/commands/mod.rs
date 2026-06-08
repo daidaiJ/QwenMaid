@@ -611,6 +611,7 @@ pub struct DiscoveredModel {
     pub id: String,
     pub name: String,
     pub auth_type: Vec<String>,
+    pub config_json: Option<String>,
     pub valid: bool,
     pub from_preset: bool,
 }
@@ -645,24 +646,15 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
         None => return Ok(vec![]),
     };
 
-    // 构建 API Key 查找表（优先级：.env > settings.json env > 系统环境变量）
+    // 构建 API Key 查找表（优先级：settings.json env > .env > 系统环境变量）
     let mut key_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
-    // 1. 系统环境变量（最低优先级）
+    // 1. 系统环境变量（最低优先级，先插入后覆盖）
     for (k, v) in std::env::vars() {
         key_map.insert(k, v);
     }
 
-    // 2. settings.json 的 env 对象
-    if let Some(env_obj) = settings.get("env").and_then(|v| v.as_object()) {
-        for (k, v) in env_obj {
-            if let Some(s) = v.as_str() {
-                key_map.insert(k.clone(), s.to_string());
-            }
-        }
-    }
-
-    // 3. .env 文件（最高优先级）
+    // 2. .env 文件
     let env_path = config::env_file_path();
     if env_path.exists() {
         if let Ok(content) = fs::read_to_string(&env_path) {
@@ -670,7 +662,22 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                 let line = line.trim();
                 if line.is_empty() || line.starts_with('#') { continue; }
                 if let Some((k, v)) = line.split_once('=') {
-                    key_map.insert(k.trim().to_string(), v.trim().to_string());
+                    let key = k.trim().to_string();
+                    let val = v.trim().to_string();
+                    if !val.is_empty() {
+                        key_map.insert(key, val);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. settings.json 的 env 对象（最高优先级）
+    if let Some(env_obj) = settings.get("env").and_then(|v| v.as_object()) {
+        for (k, v) in env_obj {
+            if let Some(s) = v.as_str() {
+                if !s.is_empty() {
+                    key_map.insert(k.clone(), s.to_string());
                 }
             }
         }
@@ -742,10 +749,16 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                 } else {
                     vec![protocol.clone()]
                 };
+                // 提取 generationConfig（含 customHeaders、contextWindowSize 等）
+                let config_json = entry.get("generationConfig")
+                    .filter(|v| v.is_object() && !v.as_object().unwrap().is_empty())
+                    .map(|v| serde_json::to_string(v).ok())
+                    .flatten();
                 models.push(DiscoveredModel {
                     id: id.to_string(),
                     name: name.to_string(),
                     auth_type: auth_types,
+                    config_json,
                     valid: true,
                     from_preset: false,
                 });
@@ -766,6 +779,7 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                         id: pm.id.clone(),
                         name: pm.name.clone(),
                         auth_type: pm.auth_type.clone(),
+                        config_json: None,
                         valid: true,
                         from_preset: true,
                     });
@@ -826,13 +840,37 @@ pub fn sync_preset_models_to_settings(_state: tauri::State<'_, AppState>) -> Res
 
     let mut settings = config::read_settings(&settings_path)?;
 
-    // 提前提取 env（避免与 model_providers 的可变借用冲突）
-    let env_map: std::collections::HashMap<String, String> = settings.get("env")
-        .and_then(|e| e.as_object())
-        .map(|obj| obj.iter()
-            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-            .collect())
-        .unwrap_or_default();
+    // 构建 env 查找表（优先级：settings.json env > .env > 系统环境变量）
+    let mut env_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    // 1. .env 文件（先插入，后被 settings.json env 覆盖）
+    let env_path = crate::config::env_file_path();
+    if env_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&env_path) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') { continue; }
+                if let Some((k, v)) = line.split_once('=') {
+                    let key = k.trim().to_string();
+                    let val = v.trim().to_string();
+                    if !val.is_empty() {
+                        env_map.insert(key, val);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. settings.json 的 env 对象（最高优先级，覆盖 .env）
+    if let Some(env_obj) = settings.get("env").and_then(|e| e.as_object()) {
+        for (k, v) in env_obj {
+            if let Some(s) = v.as_str() {
+                if !s.is_empty() {
+                    env_map.insert(k.clone(), s.to_string());
+                }
+            }
+        }
+    }
 
     let model_providers = match settings.get_mut("modelProviders").and_then(|v| v.as_object_mut()) {
         Some(mp) => mp,
@@ -946,6 +984,131 @@ pub fn sync_preset_models_to_settings(_state: tauri::State<'_, AppState>) -> Res
     }
 
     Ok(added_count)
+}
+
+// ── Proxy Status Commands ────────────────────────────────
+
+const PROXY_PORT: u16 = 18900;
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ProxyStatus {
+    pub running: bool,
+    pub port: u16,
+    pub uptime_hint: String,
+}
+
+/// 检测代理服务是否在运行（TCP 连通性）
+#[tauri::command]
+pub async fn get_proxy_status() -> Result<ProxyStatus, String> {
+    let addr = format!("127.0.0.1:{}", PROXY_PORT);
+    let running = tokio::net::TcpStream::connect(&addr).await.is_ok();
+    Ok(ProxyStatus {
+        running,
+        port: PROXY_PORT,
+        uptime_hint: if running { "运行中" } else { "未启动" }.to_string(),
+    })
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ProviderModelStats {
+    pub provider_id: i64,
+    pub provider_name: String,
+    pub base_url: String,
+    pub model_id: String,
+    pub call_count: i64,
+    pub success_count: i64,
+    pub failure_count: i64,
+    pub total_input_tokens: i64,
+    pub total_output_tokens: i64,
+    pub avg_duration_ms: f64,
+    pub total_tokens_saved: i64,
+    pub compressed_count: i64,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ProxyProviderStats {
+    pub providers: Vec<ProviderModelStats>,
+    pub total_calls: i64,
+    pub total_failures: i64,
+    pub total_tokens_saved: i64,
+}
+
+/// 获取代理服务的供应商调用统计
+#[tauri::command]
+pub fn get_proxy_provider_stats(
+    state: tauri::State<'_, AppState>,
+    days: Option<u32>,
+) -> Result<ProxyProviderStats, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let days = days.unwrap_or(30);
+
+    let mut stmt = db
+        .prepare(
+            "SELECT
+                p.id, p.name, p.base_url,
+                r.model_id,
+                COUNT(*) as call_count,
+                SUM(CASE WHEN r.status_code >= 200 AND r.status_code < 400 THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN r.status_code >= 400 OR r.status_code IS NULL THEN 1 ELSE 0 END) as failure_count,
+                COALESCE(SUM(r.input_tokens), 0),
+                COALESCE(SUM(r.output_tokens), 0),
+                COALESCE(AVG(r.duration_ms), 0),
+                COALESCE(SUM(r.tokens_saved), 0),
+                SUM(CASE WHEN r.context_compressed = 1 THEN 1 ELSE 0 END)
+             FROM request_logs r
+             JOIN providers p ON r.provider_id = p.id
+             WHERE r.timestamp >= datetime('now', '-' || ?1 || ' days')
+             GROUP BY p.id, r.model_id
+             ORDER BY p.name, call_count DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![days], |row| {
+            Ok(ProviderModelStats {
+                provider_id: row.get(0)?,
+                provider_name: row.get(1)?,
+                base_url: row.get(2)?,
+                model_id: row.get(3)?,
+                call_count: row.get(4)?,
+                success_count: row.get(5)?,
+                failure_count: row.get(6)?,
+                total_input_tokens: row.get(7)?,
+                total_output_tokens: row.get(8)?,
+                avg_duration_ms: row.get(9)?,
+                total_tokens_saved: row.get(10)?,
+                compressed_count: row.get(11)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let providers: Vec<ProviderModelStats> = rows.filter_map(|r| r.ok()).collect();
+    let total_calls = providers.iter().map(|p| p.call_count).sum();
+    let total_failures = providers.iter().map(|p| p.failure_count).sum();
+    let total_tokens_saved = providers.iter().map(|p| p.total_tokens_saved).sum();
+
+    Ok(ProxyProviderStats {
+        providers,
+        total_calls,
+        total_failures,
+        total_tokens_saved,
+    })
+}
+
+/// 重置指定供应商的调用计数（删除该供应商的 request_logs）
+#[tauri::command]
+pub fn reset_provider_counts(
+    state: tauri::State<'_, AppState>,
+    provider_id: i64,
+) -> Result<u64, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let deleted = db
+        .execute(
+            "DELETE FROM request_logs WHERE provider_id = ?1",
+            [provider_id],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(deleted as u64)
 }
 
 /// 从 URL 中提取域名（不依赖 url crate）

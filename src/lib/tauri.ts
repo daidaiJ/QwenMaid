@@ -112,6 +112,7 @@ export interface DiscoveredModel {
   id: string;
   name: string;
   auth_type: string[];
+  config_json: string | null;
   valid: boolean;
   from_preset: boolean;
 }
@@ -195,6 +196,7 @@ export interface SessionInfo {
   title: string;
   started_at: string;
   message_count: number;
+  input_tokens: number;
   file_path: string;
 }
 
@@ -296,6 +298,7 @@ export interface GlobalIndex {
 export interface ProjectIndex {
   name: string;
   session_count: number;
+  valid_session_count: number;
   memory_count: number;
   latest_session: string | null;
 }
@@ -482,3 +485,43 @@ export const getMcpStats = () => invoke<McpStats>("get_mcp_stats");
 export const injectStatusline = () => invoke<void>("inject_statusline");
 
 export const removeStatusline = () => invoke<void>("remove_statusline");
+
+// ── Proxy Status Commands ────────────────────────────────
+
+export interface ProxyStatus {
+  running: boolean;
+  port: number;
+  uptime_hint: string;
+}
+
+export interface ProviderModelStats {
+  provider_id: number;
+  provider_name: string;
+  base_url: string;
+  model_id: string;
+  call_count: number;
+  success_count: number;
+  failure_count: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  avg_duration_ms: number;
+  total_tokens_saved: number;
+  compressed_count: number;
+}
+
+export interface ProxyProviderStats {
+  providers: ProviderModelStats[];
+  total_calls: number;
+  total_failures: number;
+  total_tokens_saved: number;
+}
+
+export const getProxyStatus = () => invoke<ProxyStatus>("get_proxy_status");
+
+export const getProxyProviderStats = (days?: number) =>
+  invoke<ProxyProviderStats>("get_proxy_provider_stats", {
+    days: days ?? null,
+  });
+
+export const resetProviderCounts = (providerId: number) =>
+  invoke<number>("reset_provider_counts", { providerId });
