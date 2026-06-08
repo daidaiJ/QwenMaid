@@ -92,6 +92,8 @@ pub fn run() {
             commands::get_mcp_stats,
             commands::inject_statusline,
             commands::remove_statusline,
+            commands::check_usage_autostart,
+            commands::set_usage_autostart,
             commands::discover_existing_providers,
             commands::sync_preset_models_to_settings,
             commands::get_proxy_status,

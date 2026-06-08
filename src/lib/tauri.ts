@@ -486,6 +486,10 @@ export const injectStatusline = () => invoke<void>("inject_statusline");
 
 export const removeStatusline = () => invoke<void>("remove_statusline");
 
+export const checkUsageAutostart = () => invoke<boolean>("check_usage_autostart");
+
+export const setUsageAutostart = (enable: boolean) => invoke<void>("set_usage_autostart", { enable });
+
 // ── Proxy Status Commands ────────────────────────────────
 
 export interface ProxyStatus {

@@ -534,18 +534,7 @@ fn update_mcp_auto_inject(port: u16, enable: bool) -> Result<(), String> {
 /// 注入状态行成本追踪配置到 Qwen Code settings.json
 #[tauri::command]
 pub fn inject_statusline(app_handle: tauri::AppHandle) -> Result<(), String> {
-    let resource_dir = app_handle
-        .path()
-        .resource_dir()
-        .map_err(|e: tauri::Error| e.to_string())?;
-    let exe_path = resource_dir
-        .join("resources")
-        .join("cli")
-        .join("qwen-usage.exe");
-
-    if !exe_path.exists() {
-        return Err(format!("qwen-usage.exe not found at {:?}", exe_path));
-    }
+    let exe_path = resolve_usage_exe(&app_handle)?;
 
     let settings_path = config::user_settings_path();
     let mut settings = if settings_path.exists() {
@@ -602,6 +591,84 @@ pub fn remove_statusline() -> Result<(), String> {
         ui.remove("statusLine");
     }
     config::write_settings(&settings_path, &settings)
+}
+
+/// 获取 qwen-usage.exe 路径
+fn resolve_usage_exe(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e: tauri::Error| e.to_string())?;
+    let exe_path = resource_dir
+        .join("resources")
+        .join("cli")
+        .join("qwen-usage.exe");
+    if !exe_path.exists() {
+        return Err(format!("qwen-usage.exe not found at {:?}", exe_path));
+    }
+    Ok(exe_path)
+}
+
+/// 检测 qwen-usage 开机自启动状态
+#[tauri::command]
+pub fn check_usage_autostart(app_handle: tauri::AppHandle) -> Result<bool, String> {
+    // 先确保 exe 存在
+    let _ = resolve_usage_exe(&app_handle)?;
+
+    // Windows Startup 目录
+    let startup_dir = dirs::data_dir()
+        .ok_or("Cannot resolve AppData path")?
+        .join("Microsoft")
+        .join("Windows")
+        .join("Start Menu")
+        .join("Programs")
+        .join("Startup");
+
+    if !startup_dir.exists() {
+        return Ok(false);
+    }
+
+    // 检查 Startup 目录下是否存在 qwen-usage 相关的文件（符号链接 / 快捷方式）
+    let entries = std::fs::read_dir(&startup_dir)
+        .map_err(|e| format!("Cannot read Startup dir: {}", e))?;
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if name.contains("qwen-usage") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// 设置 qwen-usage 开机自启动
+#[tauri::command]
+pub fn set_usage_autostart(app_handle: tauri::AppHandle, enable: bool) -> Result<(), String> {
+    let exe_path = resolve_usage_exe(&app_handle)?;
+
+    let (cmd, args) = if enable {
+        ("install", vec!["-a"])
+    } else {
+        ("uninstall", vec![])
+    };
+
+    let output = std::process::Command::new(&exe_path)
+        .arg(cmd)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to run qwen-usage {}: {}", cmd, e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(format!(
+            "qwen-usage {} failed: {}{}",
+            cmd,
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+    Ok(())
 }
 
 // ── Provider Discovery ───────────────────────────────────

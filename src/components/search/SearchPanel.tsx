@@ -26,6 +26,8 @@ import {
   injectStatusline,
   removeStatusline,
   readSettings,
+  checkUsageAutostart,
+  setUsageAutostart,
 } from "@/lib/tauri";
 import type { McpConfig, McpStats } from "@/lib/tauri";
 
@@ -57,6 +59,7 @@ export function SearchPanel() {
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [statuslineEnabled, setStatuslineEnabled] = useState(false);
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [mcpRunning, setMcpRunning] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const mountedRef = useRef(true);
@@ -95,6 +98,12 @@ export function SearchPanel() {
     getMcpStatus().then((running) => {
       if (!mountedRef.current) return;
       setMcpRunning(running);
+    }).catch(() => {});
+
+    // 开机自启动状态检测
+    checkUsageAutostart().then((enabled) => {
+      if (!mountedRef.current) return;
+      setAutostartEnabled(enabled);
     }).catch(() => {});
 
     // 每 10 秒轮询 MCP 运行状态
@@ -168,6 +177,16 @@ export function SearchPanel() {
         setStatuslineEnabled(false);
         showToast("状态行已移除");
       }
+    } catch (e) {
+      showToast(`操作失败: ${e}`);
+    }
+  };
+
+  const handleAutostartToggle = async (enabled: boolean) => {
+    try {
+      await setUsageAutostart(enabled);
+      setAutostartEnabled(enabled);
+      showToast(enabled ? "已设置开机自启动" : "已取消开机自启动");
     } catch (e) {
       showToast(`操作失败: ${e}`);
     }
@@ -397,6 +416,17 @@ export function SearchPanel() {
         <Toggle
           value={statuslineEnabled}
           onChange={handleStatuslineToggle}
+        />
+      </Field>
+
+      <Field
+        label="开机自启动"
+        description="开机时自动启动 qwen-usage 后台服务（用于状态行数据采集）"
+        inline
+      >
+        <Toggle
+          value={autostartEnabled}
+          onChange={handleAutostartToggle}
         />
       </Field>
 
