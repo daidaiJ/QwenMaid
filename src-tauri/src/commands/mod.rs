@@ -750,10 +750,34 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                     vec![protocol.clone()]
                 };
                 // 提取 generationConfig（含 customHeaders、contextWindowSize 等）
-                let config_json = entry.get("generationConfig")
+                let mut config_json: Option<String> = entry.get("generationConfig")
                     .filter(|v| v.is_object() && !v.as_object().unwrap().is_empty())
                     .map(|v| serde_json::to_string(v).ok())
                     .flatten();
+                // 预设的 contextWindowSize / maxOutputTokens / inputModalities 优先级高于用户配置
+                if let Some(preset) = matched_preset {
+                    if let Some(pm) = preset.models.iter().find(|m| m.id == id) {
+                        let mut gen: serde_json::Map<String, serde_json::Value> = config_json
+                            .as_deref()
+                            .and_then(|s| serde_json::from_str(s).ok())
+                            .unwrap_or_default();
+                        if let Some(cws) = pm.context_window_size {
+                            gen.insert("contextWindowSize".to_string(), serde_json::json!(cws));
+                        }
+                        if let Some(mot) = pm.max_output_tokens {
+                            gen.insert("samplingParams".to_string(), serde_json::json!({ "max_tokens": mot }));
+                        }
+                        if let Some(ref modalities) = pm.input_modalities {
+                            let mods: serde_json::Map<String, serde_json::Value> = modalities.iter()
+                                .map(|m| (m.clone(), serde_json::Value::Bool(true)))
+                                .collect();
+                            gen.insert("modalities".to_string(), serde_json::Value::Object(mods));
+                        }
+                        if !gen.is_empty() {
+                            config_json = serde_json::to_string(&gen).ok();
+                        }
+                    }
+                }
                 models.push(DiscoveredModel {
                     id: id.to_string(),
                     name: name.to_string(),
@@ -775,11 +799,29 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                         continue;
                     }
                     seen_ids.insert(pm.id.clone());
+                    // 从预设构建 generationConfig（contextWindowSize、maxOutputTokens、modalities）
+                    let preset_config = {
+                        let mut gen = serde_json::Map::new();
+                        if let Some(cws) = pm.context_window_size {
+                            gen.insert("contextWindowSize".to_string(), serde_json::json!(cws));
+                        }
+                        if let Some(mot) = pm.max_output_tokens {
+                            gen.insert("samplingParams".to_string(), serde_json::json!({ "max_tokens": mot }));
+                        }
+                        if let Some(ref modalities) = pm.input_modalities {
+                            let mods: serde_json::Map<String, serde_json::Value> = modalities.iter()
+                                .map(|m| (m.clone(), serde_json::Value::Bool(true)))
+                                .collect();
+                            gen.insert("modalities".to_string(), serde_json::Value::Object(mods));
+                        }
+                        if gen.is_empty() { None }
+                        else { serde_json::to_string(&gen).ok() }
+                    };
                     models.push(DiscoveredModel {
                         id: pm.id.clone(),
                         name: pm.name.clone(),
                         auth_type: pm.auth_type.clone(),
-                        config_json: None,
+                        config_json: preset_config,
                         valid: true,
                         from_preset: true,
                     });

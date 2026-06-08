@@ -171,8 +171,9 @@ function parseFrontmatterItems(fm: string): { label: string; value: string; colo
 }
 
 function decodeProjectName(encoded: string): { dirName: string; fullPath: string } {
+  // 还原完整路径用于 description 显示
   const fullPath = encoded.replace(/--/g, ":\\").replace(/-/g, "\\");
-  const parts = fullPath.replace(/[:/\\]+$/, "").split(/[\\/]/);
-  const dirName = parts[parts.length - 1] || fullPath;
+  // dirName：去掉盘符前缀（如 d--），保留编码名原样，避免连字符目录名被截断
+  const dirName = encoded.replace(/^[a-zA-Z]--/, "");
   return { dirName, fullPath };
 }
