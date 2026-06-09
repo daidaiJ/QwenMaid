@@ -643,7 +643,7 @@ pub fn check_usage_autostart(app_handle: tauri::AppHandle) -> Result<bool, Strin
 
 /// 设置 qwen-usage 开机自启动
 #[tauri::command]
-pub fn set_usage_autostart(app_handle: tauri::AppHandle, enable: bool) -> Result<(), String> {
+pub async fn set_usage_autostart(app_handle: tauri::AppHandle, enable: bool) -> Result<(), String> {
     let exe_path = resolve_usage_exe(&app_handle)?;
 
     let (cmd, args) = if enable {
@@ -652,10 +652,14 @@ pub fn set_usage_autostart(app_handle: tauri::AppHandle, enable: bool) -> Result
         ("uninstall", vec![])
     };
 
-    let output = std::process::Command::new(&exe_path)
-        .arg(cmd)
-        .args(&args)
+    let mut command = tokio::process::Command::new(&exe_path);
+    command.arg(cmd).args(&args);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let output = command
         .output()
+        .await
         .map_err(|e| format!("Failed to run qwen-usage {}: {}", cmd, e))?;
 
     if !output.status.success() {

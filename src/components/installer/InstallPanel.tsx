@@ -89,7 +89,6 @@ function Section({
 // ── 模块级缓存（组件卸载重挂载时不丢失） ─────────────────
 
 const DETECT_CACHE_KEY = "qwenmaid:installDetectCache";
-const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
 
 interface DetectCacheData {
   nodeVer: string | null;
@@ -98,14 +97,15 @@ interface DetectCacheData {
   localVer: string | null;
   latestVer: string | null;
   mirror: string;
+  detectedAt: string; // "YYYY-MM-DD"
 }
 
 function getCachedDetect(): DetectCacheData | null {
   try {
     const raw = sessionStorage.getItem(DETECT_CACHE_KEY);
     if (!raw) return null;
-    const { data, ts } = JSON.parse(raw);
-    if (Date.now() - ts > CACHE_TTL) return null;
+    const data: DetectCacheData = JSON.parse(raw);
+    if (data.detectedAt !== new Date().toISOString().slice(0, 10)) return null;
     return data;
   } catch {
     return null;
@@ -114,7 +114,7 @@ function getCachedDetect(): DetectCacheData | null {
 
 function setCachedDetect(data: DetectCacheData) {
   try {
-    sessionStorage.setItem(DETECT_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+    sessionStorage.setItem(DETECT_CACHE_KEY, JSON.stringify(data));
   } catch {}
 }
 
@@ -127,6 +127,7 @@ export function InstallPanel() {
   const [npmVer, setNpmVer] = useState<string | null>(null);
   const [localVer, setLocalVer] = useState<string | null>(null);
   const [latestVer, setLatestVer] = useState<string | null>(null);
+  const [detectedAt, setDetectedAt] = useState<string>(() => getCachedDetect()?.detectedAt ?? "");
   const [loading, setLoading] = useState(() => !getCachedDetect());
 
   // 操作状态
@@ -155,7 +156,7 @@ export function InstallPanel() {
   const [customMirror, setCustomMirror] = useState("");
 
   const detect = useCallback(async (force = false) => {
-    // 命中缓存且未过期
+    // 命中缓存且当天已检测
     if (!force) {
       const cached = getCachedDetect();
       if (cached) {
@@ -165,6 +166,7 @@ export function InstallPanel() {
         setLocalVer(cached.localVer);
         setLatestVer(cached.latestVer);
         setMirror(cached.mirror);
+        setDetectedAt(cached.detectedAt);
         setLoading(false);
         return;
       }
@@ -186,6 +188,7 @@ export function InstallPanel() {
         localVer: local ? parseVersion(local) : null,
         latestVer: latest ? parseVersion(latest) : null,
         mirror: currentMirror,
+        detectedAt: new Date().toISOString().slice(0, 10),
       };
       setNodeVer(result.nodeVer);
       setNodePath(result.nodePath);
@@ -193,6 +196,7 @@ export function InstallPanel() {
       setLocalVer(result.localVer);
       setLatestVer(result.latestVer);
       setMirror(result.mirror);
+      setDetectedAt(result.detectedAt);
       setCachedDetect(result);
     } finally {
       setLoading(false);
@@ -266,14 +270,19 @@ export function InstallPanel() {
               : "需要配置"}
           </span>
         </div>
-        <button
-          onClick={() => detect(true)}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-2.5 h-7 text-[11px] text-[var(--text-secondary)] border border-[var(--border)] rounded-md hover:bg-[var(--bg-hover)] disabled:opacity-40 transition-colors"
-        >
-          <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-          刷新
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => detect(true)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-2.5 h-7 text-[11px] text-[var(--text-secondary)] border border-[var(--border)] rounded-md hover:bg-[var(--bg-hover)] disabled:opacity-40 transition-colors"
+          >
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+            刷新
+          </button>
+          {detectedAt && (
+            <span className="text-[10px] text-[var(--text-muted)]">检测于 {detectedAt}</span>
+          )}
+        </div>
       </div>
 
       {/* 内容区 */}

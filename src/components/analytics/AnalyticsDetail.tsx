@@ -19,7 +19,7 @@ export function AnalyticsDetail() {
     try {
       const d = await (source === "proxy" ? getProxyDetailStats(days) : getModelDetailStats(days));
       setData(d);
-      setSelectedModels(new Set(d.models.map((m) => m.model)));
+      setSelectedModels(d.models.length > 0 ? new Set([d.models[0].model]) : new Set());
     } catch {
       // 查询失败时 data 保持旧值，右侧面板显示空状态占位
     } finally {
@@ -31,21 +31,12 @@ export function AnalyticsDetail() {
   useEffect(() => { load(); }, [load]);
 
   const toggleModel = (model: string) => {
-    setSelectedModels((prev) => {
-      const next = new Set(prev);
-      if (next.has(model)) next.delete(model);
-      else next.add(model);
-      return next;
-    });
+    setSelectedModels(new Set([model]));
   };
 
   const toggleAll = () => {
     if (!data) return;
-    if (selectedModels.size === data.models.length) {
-      setSelectedModels(new Set());
-    } else {
-      setSelectedModels(new Set(data.models.map((m) => m.model)));
-    }
+    setSelectedModels(new Set(data.models.map((m) => m.model)));
   };
 
   const filteredDaily = useMemo(() => {
@@ -99,7 +90,7 @@ export function AnalyticsDetail() {
             <div className="flex items-center justify-between px-3 h-9 border-b border-[var(--border)]">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">模型选择</span>
               <button onClick={toggleAll} className="text-[10px] text-[var(--accent)] hover:underline">
-                {selectedModels.size === data.models.length ? "全不选" : "全选"}
+                全部
               </button>
             </div>
 
@@ -111,7 +102,8 @@ export function AnalyticsDetail() {
                   className="flex items-start gap-2 px-3 py-1.5 cursor-pointer hover:bg-[var(--bg-hover)] transition-colors"
                 >
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="model-select"
                     checked={selectedModels.has(m.model)}
                     onChange={() => toggleModel(m.model)}
                     className="mt-0.5 accent-[var(--accent)]"
@@ -235,7 +227,7 @@ function TokenAreaChart({ daily, selectedModels }: {
 
   if (dates.length < 2) return <div className="text-[11px] text-[var(--text-muted)] text-center py-4">数据不足</div>;
 
-  const W = 600, H = 200, PL = 50, PR = 10, PT = 10, PB = 25;
+  const W = 600, H = 200, PL = 50, PR = 70, PT = 10, PB = 25;
   const plotW = W - PL - PR, plotH = H - PT - PB;
 
   let maxY = 0;
@@ -267,15 +259,23 @@ function TokenAreaChart({ daily, selectedModels }: {
         {dates.map((d, i) => i % labelEvery === 0 ? (
           <text key={d} x={xPos(i)} y={H - PB + 12} textAnchor="middle" fill="var(--text-muted)" fontSize={7}>{fmtAxisLabel(d)}</text>
         ) : null)}
-        {TOKEN_LINES.filter((l) => visibleLines.has(l.key)).map((line) => {
+        {TOKEN_LINES.filter((l) => visibleLines.has(l.key)).map((line, li) => {
           return models.map((model) => {
             const pts = dates.map((d, i) => {
               const dd = daily.find((a) => a.date === d && a.model === model);
               return { x: xPos(i), y: yPos((dd as any)?.[line.key] ?? 0) };
             });
+            const last = pts[pts.length - 1];
             return (
-              <path key={`${line.key}-${model}`} d={smoothPath(pts)} fill="none" stroke={line.color}
-                strokeWidth={1.5} strokeLinejoin="round" opacity={models.length > 1 ? 0.5 + 0.3 * models.indexOf(model) : 1} />
+              <g key={`${line.key}-${model}`}>
+                <path d={smoothPath(pts)} fill="none" stroke={line.color}
+                  strokeWidth={1.5} strokeLinejoin="round" />
+                {li === 0 && last && (
+                  <text x={last.x + 4} y={last.y + 3} fill={line.color} fontSize={8} fontWeight="600">
+                    {shortModel(model)}
+                  </text>
+                )}
+              </g>
             );
           });
         })}
@@ -287,12 +287,6 @@ function TokenAreaChart({ daily, selectedModels }: {
             <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: line.color }} />
             <span className="text-[var(--text-primary)]">{line.label}</span>
           </button>
-        ))}
-        {models.length > 1 && models.map((model, i) => (
-          <div key={model} className="flex items-center gap-1 ml-2">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#58a6ff", opacity: 0.5 + 0.3 * i }} />
-            <span className="text-[9px] text-[var(--text-muted)] font-mono">{shortModel(model)}</span>
-          </div>
         ))}
       </div>
     </div>
@@ -337,7 +331,7 @@ function PerfLineChart({ daily, selectedModels, hasPerfData }: {
 
   if (dates.length < 2) return <div className="text-[11px] text-[var(--text-muted)] text-center py-4">数据不足</div>;
 
-  const W = 600, H = 180, PL = 50, PR = 50, PT = 10, PB = 25;
+  const W = 600, H = 180, PL = 50, PR = 80, PT = 10, PB = 25;
   const plotW = W - PL - PR, plotH = H - PT - PB;
 
   let maxLeft = 0, maxRight = 0;
@@ -373,7 +367,7 @@ function PerfLineChart({ daily, selectedModels, hasPerfData }: {
         {dates.map((d, i) => i % labelEvery === 0 ? (
           <text key={d} x={xPos(i)} y={H - PB + 12} textAnchor="middle" fill="var(--text-muted)" fontSize={7}>{fmtAxisLabel(d)}</text>
         ) : null)}
-        {PERF_LINES.filter((l) => visibleLines.has(l.key)).map((line) => {
+        {PERF_LINES.filter((l) => visibleLines.has(l.key)).map((line, li) => {
           const yFn = line.axis === "left" ? yLeft : yRight;
           return models.map((model) => {
             const points = dates.map((d, i) => {
@@ -382,9 +376,17 @@ function PerfLineChart({ daily, selectedModels, hasPerfData }: {
               return { x: xPos(i), y: yFn(val) };
             });
             const pathD = smoothPath(points);
+            const last = points[points.length - 1];
             return (
-              <path key={`${line.key}-${model}`} d={pathD} fill="none" stroke={line.color}
-                strokeWidth={1.5} strokeLinejoin="round" opacity={models.length > 1 ? 0.5 + 0.3 * models.indexOf(model) : 1} />
+              <g key={`${line.key}-${model}`}>
+                <path d={pathD} fill="none" stroke={line.color}
+                  strokeWidth={1.5} strokeLinejoin="round" />
+                {li === 0 && last && (
+                  <text x={last.x + 4} y={last.y + 3} fill={line.color} fontSize={8} fontWeight="600">
+                    {shortModel(model)}
+                  </text>
+                )}
+              </g>
             );
           });
         })}

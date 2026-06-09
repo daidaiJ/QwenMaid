@@ -1,4 +1,6 @@
 use serde::Serialize;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use tauri::{Emitter, Window};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -27,11 +29,13 @@ async fn run_npm_lifecycle(
     }
 
     let mut child = if cfg!(target_os = "windows") {
-        tokio::process::Command::new("cmd")
-            .args(&args)
+        let mut cmd = tokio::process::Command::new("cmd");
+        cmd.args(&args)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+            .stderr(std::process::Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        cmd.spawn()
             .map_err(|e| format!("failed to spawn npm {}: {}", action, e))?
     } else {
         tokio::process::Command::new("npm")
@@ -149,6 +153,7 @@ pub fn configure_npm_mirror(registry: String) -> Result<(), String> {
     let output = if cfg!(target_os = "windows") {
         std::process::Command::new("cmd")
             .args(["/C", "npm", "config", "set", "registry", &registry])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output()
     } else {
         std::process::Command::new("npm")
@@ -170,6 +175,7 @@ pub fn get_npm_mirror() -> Result<String, String> {
     let output = if cfg!(target_os = "windows") {
         std::process::Command::new("cmd")
             .args(["/C", "npm", "config", "get", "registry"])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output()
     } else {
         std::process::Command::new("npm")
@@ -199,6 +205,7 @@ fn detect_tool(cmd: &str, args: &[&str]) -> Option<ToolVersion> {
         full_args.extend_from_slice(args);
         std::process::Command::new("cmd")
             .args(&full_args)
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output()
             .ok()?
     } else {
