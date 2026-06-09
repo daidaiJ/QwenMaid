@@ -309,6 +309,40 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
 
+    if current < 12 {
+        // session_model_stats: per-session per-model token breakdown (source of truth)
+        // model_daily_stats 由该表聚合重建，不再独立累加
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS session_model_stats (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                project         TEXT NOT NULL,
+                session_id      TEXT NOT NULL,
+                date            TEXT NOT NULL,
+                model           TEXT NOT NULL,
+                session_count   INTEGER DEFAULT 1,
+                message_count   INTEGER DEFAULT 0,
+                input_tokens    INTEGER DEFAULT 0,
+                output_tokens   INTEGER DEFAULT 0,
+                cache_read      INTEGER DEFAULT 0,
+                UNIQUE(project, session_id, date, model)
+            );
+            CREATE INDEX IF NOT EXISTS idx_sms_session ON session_model_stats(project, session_id);
+            CREATE INDEX IF NOT EXISTS idx_sms_date_model ON session_model_stats(date, model);",
+        ).map_err(|e| e.to_string())?;
+
+        // 清除 session_stats 的 file_size/file_mtime，强制下次同步全量重解析
+        // 从而通过新的 DELETE+INSERT 逻辑重建 session_model_stats 和 model_daily_stats
+        conn.execute("UPDATE session_stats SET file_size = 0, file_mtime = '0'", [])
+            .map_err(|e| e.to_string())?;
+
+        // 清除旧的 model_daily_stats 脏数据（将在下次同步时从 session_model_stats 重建）
+        conn.execute("DELETE FROM model_daily_stats", [])
+            .map_err(|e| e.to_string())?;
+
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (12)", [])
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 

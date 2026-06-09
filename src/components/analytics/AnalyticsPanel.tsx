@@ -146,8 +146,8 @@ export function AnalyticsPanel() {
             {/* ── Row 2: 项目统计(上) | I/O(下)(左半) ─ 模型趋势(右半) ── */}
             <div className="grid grid-cols-[1fr_4fr] gap-4">
               <div className="space-y-4">
-                {data.project_stats.length > 0 && (
-                  <Section title="项目统计 Top 5" icon={<FolderOpen size={13} />}>
+                <Section title="项目统计 Top 5" icon={<FolderOpen size={13} />}>
+                  {data.project_stats.length > 0 ? (
                     <div className="space-y-0">
                       {data.project_stats.map((p) => (
                         <div key={p.project} className="flex items-center gap-1.5 h-5 px-0.5 rounded hover:bg-[var(--bg-hover)]">
@@ -157,8 +157,10 @@ export function AnalyticsPanel() {
                         </div>
                       ))}
                     </div>
-                  </Section>
-                )}
+                  ) : (
+                    <EmptyPlaceholder message="暂无项目数据" />
+                  )}
+                </Section>
                 <div className="border border-[var(--border)] rounded-xl p-3 space-y-2 bg-[var(--bg-card)]">
                   {(() => {
                     const inp = data.total_input_tokens;
@@ -188,42 +190,50 @@ export function AnalyticsPanel() {
                   })()}
                 </div>
               </div>
-              {data.model_daily.length > 0 && (
-                <Section title="模型趋势（近 30 天）" icon={<Cpu size={13} />}>
+              <Section title="模型趋势（近 30 天）" icon={<Cpu size={13} />}>
+                {data.model_daily.length > 0 ? (
                   <ModelLineChart rows={data.model_daily} days={30} height={90} />
-                </Section>
-              )}
+                ) : (
+                  <EmptyPlaceholder message="暂无模型趋势数据" hint="点击「同步数据」扫描会话文件" />
+                )}
+              </Section>
             </div>
 
             {/* ── Row 3: 模型排名(左) + 工具排行(右) ── */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {data.top_models.length > 0 && (
-                <Section title="模型用量排名" icon={<Cpu size={13} />}>
+              <Section title="模型用量排名" icon={<Cpu size={13} />}>
+                {data.top_models.length > 0 ? (
                   <ModelRankingTable models={data.top_models} />
-                </Section>
-              )}
-              {(topItems?.top_tools ?? []).length > 0 && (
-                <Section title="工具调用排行" icon={<Wrench size={13} />}>
+                ) : (
+                  <EmptyPlaceholder message="暂无模型排名数据" />
+                )}
+              </Section>
+              <Section title="工具调用排行" icon={<Wrench size={13} />}>
+                {(topItems?.top_tools ?? []).length > 0 ? (
                   <BarList items={topItems!.top_tools} max={topItems!.top_tools[0]?.count ?? 1} color="#d29922" />
-                </Section>
-              )}
+                ) : (
+                  <EmptyPlaceholder message="暂无工具调用数据" />
+                )}
+              </Section>
             </div>
 
             {/* ── Row 4: 技能调用(左) + 子智能体(右) ── */}
-            {((topItems?.top_skills ?? []).length > 0 || (topItems?.top_agents ?? []).length > 0) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(topItems?.top_skills ?? []).length > 0 && (
-                  <Section title="技能调用排行" icon={<Zap size={13} />}>
-                    <BarList items={topItems!.top_skills} max={topItems!.top_skills[0]?.count ?? 1} color="#bc8cff" />
-                  </Section>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Section title="技能调用排行" icon={<Zap size={13} />}>
+                {(topItems?.top_skills ?? []).length > 0 ? (
+                  <BarList items={topItems!.top_skills} max={topItems!.top_skills[0]?.count ?? 1} color="#bc8cff" />
+                ) : (
+                  <EmptyPlaceholder message="暂无技能调用数据" />
                 )}
-                {(topItems?.top_agents ?? []).length > 0 && (
-                  <Section title="子智能体调用" icon={<Cpu size={13} />}>
-                    <BarList items={topItems!.top_agents} max={topItems!.top_agents[0]?.count ?? 1} color="#58a6ff" />
-                  </Section>
+              </Section>
+              <Section title="子智能体调用" icon={<Cpu size={13} />}>
+                {(topItems?.top_agents ?? []).length > 0 ? (
+                  <BarList items={topItems!.top_agents} max={topItems!.top_agents[0]?.count ?? 1} color="#58a6ff" />
+                ) : (
+                  <EmptyPlaceholder message="暂无子智能体数据" />
                 )}
-              </div>
-            )}
+              </Section>
+            </div>
           </>
         )}
       </div>
@@ -254,6 +264,16 @@ function Section({ title, icon, children }: { title: string; icon: React.ReactNo
         <span className="text-[12px] font-medium text-[var(--text-primary)]">{title}</span>
       </div>
       <div className="px-4 py-3 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function EmptyPlaceholder({ message, hint }: { message: string; hint?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-6 gap-1 text-[var(--text-muted)]">
+      <Zap size={16} className="opacity-20" />
+      <span className="text-[11px]">{message}</span>
+      {hint && <span className="text-[10px] opacity-60">{hint}</span>}
     </div>
   );
 }

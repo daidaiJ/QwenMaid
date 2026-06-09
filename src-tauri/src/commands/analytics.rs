@@ -39,6 +39,7 @@ pub fn sync_session_stats(conn: &Connection) -> Result<usize, String> {
     }
 
     let mut synced = 0usize;
+    let mut affected_dates: HashSet<String> = HashSet::new();
 
     for entry in fs::read_dir(&projects_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -81,13 +82,56 @@ pub fn sync_session_stats(conn: &Connection) -> Result<usize, String> {
             // 始终全量重解析（增量解析的合并逻辑容易丢数据）
             let stats = parse_session_stats(&path, 0);
 
+            // 收集受影响的日期
+            for me in &stats.model_entries {
+                affected_dates.insert(me.date.clone());
+            }
+
             // 写入 DB（持锁，但每个文件单独写，很快释放）
             upsert_session(conn, &project, &session_id, &path, file_size, &mtime, &stats);
             synced += 1;
         }
     }
 
+    // 有文件同步时，从 session_model_stats 重建受影响日期的 model_daily_stats
+    if synced > 0 {
+        rebuild_model_daily_stats(conn, &affected_dates);
+    }
+
     Ok(synced)
+}
+
+/// 从 session_model_stats 重建 model_daily_stats（仅受影响的日期）
+fn rebuild_model_daily_stats(conn: &Connection, dates: &HashSet<String>) {
+    if dates.is_empty() { return; }
+
+    // 删除受影响日期的旧聚合数据
+    for date in dates {
+        let _ = conn.execute(
+            "DELETE FROM model_daily_stats WHERE date = ?1",
+            rusqlite::params![date],
+        );
+    }
+
+    // 从 session_model_stats 重新聚合
+    let placeholders: String = dates.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "INSERT INTO model_daily_stats (date, model, session_count, message_count, input_tokens, output_tokens, cache_read)
+         SELECT date, model,
+                SUM(session_count), SUM(message_count),
+                SUM(input_tokens), SUM(output_tokens), SUM(cache_read)
+         FROM session_model_stats
+         WHERE date IN ({})
+         GROUP BY date, model",
+        placeholders
+    );
+
+    let params: Vec<Box<dyn rusqlite::types::ToSql>> = dates.iter()
+        .map(|d| Box::new(d.clone()) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let _ = conn.execute(&sql, param_refs.as_slice());
 }
 
 /// 将统计结果写入/更新 DB
@@ -155,19 +199,17 @@ fn upsert_session(
         );
     }
 
-    // model_daily_stats
+    // session_model_stats: 先删后插，保证幂等（不会重复累加）
+    let _ = conn.execute(
+        "DELETE FROM session_model_stats WHERE project = ?1 AND session_id = ?2",
+        rusqlite::params![project, session_id],
+    );
     for entry in &stats.model_entries {
         let _ = conn.execute(
-            "INSERT INTO model_daily_stats (date, model, session_count, message_count, input_tokens, output_tokens, cache_read)
-             VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6)
-             ON CONFLICT(date, model) DO UPDATE SET
-                session_count = session_count + 1,
-                message_count = message_count + excluded.message_count,
-                input_tokens = input_tokens + excluded.input_tokens,
-                output_tokens = output_tokens + excluded.output_tokens,
-                cache_read = cache_read + excluded.cache_read",
+            "INSERT INTO session_model_stats (project, session_id, date, model, session_count, message_count, input_tokens, output_tokens, cache_read)
+             VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6, ?7, ?8)",
             rusqlite::params![
-                entry.date, entry.model, entry.msg_count,
+                project, session_id, entry.date, entry.model, entry.msg_count,
                 entry.input_tokens, entry.output_tokens, entry.cache_read,
             ],
         );
