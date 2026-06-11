@@ -300,6 +300,10 @@ const MODEL_COLORS = ["#58a6ff", "#3fb950", "#d29922", "#bc8cff", "#f48771", "#7
 
 function ModelLineChart({ rows, days: limitDays, height }: { rows: ModelDailyRow[]; days?: number; height?: number }) {
   const [range, setRange] = useState<[number, number]>([0, 1]);
+  const [hovered, setHovered] = useState<{
+    x: number; y: number; date: string; model: string; tokens: number; color: string;
+  } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   // 过滤最近 N 天的数据
   const filteredRows = useMemo(() => {
@@ -359,8 +363,8 @@ function ModelLineChart({ rows, days: limitDays, height }: { rows: ModelDailyRow
   const labelEvery = Math.max(1, Math.floor(visibleDates.length / 8));
 
   return (
-    <div className="space-y-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+    <div className="relative space-y-2">
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         {/* 网格线 */}
         {[0, 0.25, 0.5, 0.75, 1].map((r) => {
           const y = yPos(r * maxY);
@@ -376,22 +380,60 @@ function ModelLineChart({ rows, days: limitDays, height }: { rows: ModelDailyRow
         {/* 折线 */}
         {models.map((model, mi) => {
           const arr = byModel.get(model)!;
+          const color = MODEL_COLORS[mi % MODEL_COLORS.length];
           const pts = visibleDates.map((d, i) => {
             const found = arr.find((a) => a.date === d);
             return { x: xPos(i), y: yPos(found?.tokens ?? 0) };
           });
           return (
             <g key={model}>
-              <path d={smoothPath(pts)} fill="none" stroke={MODEL_COLORS[mi % MODEL_COLORS.length]} strokeWidth={1.5} strokeLinejoin="round" />
+              <path d={smoothPath(pts)} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
               {visibleDates.map((d, i) => {
                 const found = arr.find((a) => a.date === d);
                 if (!found || found.tokens === 0) return null;
-                return <circle key={d} cx={xPos(i)} cy={yPos(found.tokens)} r={2.5} fill={MODEL_COLORS[mi % MODEL_COLORS.length]} />;
+                const cx = xPos(i), cy = yPos(found.tokens);
+                return (
+                  <g key={d}>
+                    <circle cx={cx} cy={cy} r={2.5} fill={color} />
+                    <circle
+                      cx={cx} cy={cy} r={10} fill="transparent"
+                      style={{ cursor: "pointer" }}
+                      onMouseEnter={() => {
+                        const svgEl = svgRef.current;
+                        if (!svgEl) return;
+                        const rect = svgEl.getBoundingClientRect();
+                        const scaleX = rect.width / W;
+                        const scaleY = rect.height / H;
+                        setHovered({
+                          x: rect.left + cx * scaleX,
+                          y: rect.top + cy * scaleY,
+                          date: d, model: shortModel(model), tokens: found.tokens, color,
+                        });
+                      }}
+                      onMouseLeave={() => setHovered(null)}
+                    />
+                  </g>
+                );
               })}
             </g>
           );
         })}
       </svg>
+
+      {/* 悬浮提示 */}
+      {hovered && (
+        <div
+          className="fixed z-[200] pointer-events-none px-2.5 py-1.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-strong)] shadow-[var(--shadow-md)] text-[11px]"
+          style={{ left: hovered.x + 12, top: hovered.y - 10, transform: "translateY(-100%)" }}
+        >
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: hovered.color }} />
+            <span className="font-medium text-[var(--text-primary)]">{hovered.model}</span>
+          </div>
+          <div className="text-[var(--text-muted)]">{hovered.date}</div>
+          <div className="font-mono font-semibold text-[var(--text-primary)]">{fmtTok(hovered.tokens)}</div>
+        </div>
+      )}
 
       {/* 拖拽选区条 */}
       <BrushRange

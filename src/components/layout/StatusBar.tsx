@@ -5,7 +5,7 @@ export function StatusBar() {
       <span className="font-medium text-[var(--text-primary)]">QWenMaid</span>
       <span className="mx-2 text-[var(--border)]">│</span>
       <span>代理运行中</span>
-      <span className="ml-auto text-[var(--text-muted)]">v0.1.0</span>
+      <span className="ml-auto text-[var(--text-muted)]">v{__APP_VERSION__}</span>
     </footer>
   );
 }

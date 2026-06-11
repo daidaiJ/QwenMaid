@@ -41,20 +41,30 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build frontend
-        run: npm run build
-
       - name: Sync version from tag
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          # package.json — Vite 从此读取 __APP_VERSION__
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          # tauri.conf.json
           node -e "
             const fs = require('fs');
             const conf = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
             conf.version = '${VERSION}';
             fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
           "
+          # Cargo.toml
           sed -i "0,/^version = .*/s/^version = .*/version = \"${VERSION}\"/" src-tauri/Cargo.toml
+          echo "✅ Version synced to ${VERSION}"
+
+      - name: Build frontend
+        run: npm run build
 
       - name: Pre-install NSIS
         shell: bash

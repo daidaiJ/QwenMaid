@@ -1,6 +1,7 @@
 import { useState, lazy, Suspense } from "react";
 import { ActivityBar, type PanelId } from "./ActivityBar";
 import { StatusBar } from "./StatusBar";
+import { ToastHost } from "@/components/ui/Toast";
 
 const ProviderPanel = lazy(() =>
   import("@/components/proxy/ProviderPanel").then((m) => ({
@@ -97,6 +98,7 @@ export function Shell() {
         </main>
       </div>
       <StatusBar />
+      <ToastHost />
     </div>
   );
 }

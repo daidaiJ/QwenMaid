@@ -655,7 +655,7 @@ function ProviderDetail({
             <Plus size={13} />
           </button>
         </div>
-        <div className="space-y-0.5">
+        <div className="space-y-2">
           {models.map((m) => (
             <ModelRow
               key={m.id}
@@ -718,7 +718,7 @@ function ModelRow({
   return (
     <div className="bg-[var(--bg-card)] rounded-lg shadow-[var(--shadow-card)] group hover:shadow-[var(--shadow-md)] transition-shadow">
       {/* 行头 */}
-      <div className="flex items-center gap-2 px-3 h-8 text-[13px]">
+      <div className="flex items-center gap-2 px-3 py-2 text-[13px]">
         <button
           onClick={() => setExpanded(!expanded)}
           className="text-[var(--text-muted)] hover:text-[var(--text-primary)] shrink-0"

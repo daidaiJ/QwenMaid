@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { getModelDetailStats, getProxyDetailStats } from "@/lib/tauri";
 import type { ModelDetailData } from "@/lib/tauri";
 import { Loader2, Cpu, Zap, Server } from "lucide-react";
@@ -214,6 +214,10 @@ function TokenAreaChart({ daily, selectedModels }: {
   const [visibleLines, setVisibleLines] = useState<Set<string>>(
     new Set(TOKEN_LINES.map((l) => l.key))
   );
+  const [hovered, setHovered] = useState<{
+    x: number; y: number; date: string; values: { label: string; value: number; color: string }[];
+  } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const toggleLine = (key: string) => {
     setVisibleLines((prev) => {
       const next = new Set(prev);
@@ -247,8 +251,8 @@ function TokenAreaChart({ daily, selectedModels }: {
   const labelEvery = Math.max(1, Math.floor(dates.length / 8));
 
   return (
-    <div className="space-y-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+    <div className="relative space-y-2">
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         {[0, 0.25, 0.5, 0.75, 1].map((r) => {
           const y = yPos(r * maxY);
           return <g key={r}>
@@ -279,7 +283,65 @@ function TokenAreaChart({ daily, selectedModels }: {
             );
           });
         })}
+        {/* 悬浮热区（每列一个透明 rect） */}
+        {dates.map((d, i) => {
+          const cx = xPos(i);
+          return (
+            <rect
+              key={`hit-${d}`}
+              x={cx - xStep / 2}
+              y={PT}
+              width={xStep}
+              height={plotH}
+              fill="transparent"
+              style={{ cursor: "crosshair" }}
+              onMouseEnter={() => {
+                const svgEl = svgRef.current;
+                if (!svgEl) return;
+                const rect = svgEl.getBoundingClientRect();
+                const scaleX = rect.width / W;
+                const scaleY = rect.height / H;
+                const vals: { label: string; value: number; color: string }[] = [];
+                for (const line of TOKEN_LINES) {
+                  if (!visibleLines.has(line.key)) continue;
+                  let total = 0;
+                  for (const model of models) {
+                    const dd = daily.find((a) => a.date === d && a.model === model);
+                    total += (dd as any)?.[line.key] ?? 0;
+                  }
+                  if (total > 0) vals.push({ label: line.label, value: total, color: line.color });
+                }
+                if (vals.length > 0) {
+                  setHovered({
+                    x: rect.left + cx * scaleX,
+                    y: rect.top + PT * scaleY,
+                    date: d, values: vals,
+                  });
+                }
+              }}
+              onMouseLeave={() => setHovered(null)}
+            />
+          );
+        })}
       </svg>
+
+      {/* 悬浮提示 */}
+      {hovered && (
+        <div
+          className="fixed z-[200] pointer-events-none px-2.5 py-1.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-strong)] shadow-[var(--shadow-md)] text-[11px]"
+          style={{ left: hovered.x + 12, top: hovered.y + 8 }}
+        >
+          <div className="text-[var(--text-muted)] mb-1">{hovered.date}</div>
+          {hovered.values.map((v, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: v.color }} />
+              <span className="text-[var(--text-secondary)]">{v.label}</span>
+              <span className="ml-auto font-mono font-semibold text-[var(--text-primary)]">{fmtTok(v.value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {TOKEN_LINES.map((line) => (
           <button key={line.key} onClick={() => toggleLine(line.key)}
@@ -308,6 +370,10 @@ function PerfLineChart({ daily, selectedModels, hasPerfData }: {
   hasPerfData: boolean;
 }) {
   const [visibleLines, setVisibleLines] = useState<Set<string>>(new Set(PERF_LINES.map((l) => l.key)));
+  const [hovered, setHovered] = useState<{
+    x: number; y: number; date: string; values: { label: string; value: number; color: string; unit: string }[];
+  } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   const toggleLine = (key: string) => {
     setVisibleLines((prev) => {
@@ -352,8 +418,8 @@ function PerfLineChart({ daily, selectedModels, hasPerfData }: {
   const labelEvery = Math.max(1, Math.floor(dates.length / 8));
 
   return (
-    <div className="space-y-2">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+    <div className="relative space-y-2">
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         {[0, 0.5, 1].map((r) => {
           const y = yLeft(r * maxLeft);
           return <g key={`l${r}`}>
@@ -390,7 +456,68 @@ function PerfLineChart({ daily, selectedModels, hasPerfData }: {
             );
           });
         })}
+        {/* 悬浮热区 */}
+        {dates.map((d, i) => {
+          const cx = xPos(i);
+          return (
+            <rect
+              key={`hit-${d}`}
+              x={cx - xStep / 2}
+              y={PT}
+              width={xStep}
+              height={plotH}
+              fill="transparent"
+              style={{ cursor: "crosshair" }}
+              onMouseEnter={() => {
+                const svgEl = svgRef.current;
+                if (!svgEl) return;
+                const rect = svgEl.getBoundingClientRect();
+                const scaleX = rect.width / W;
+                const scaleY = rect.height / H;
+                const vals: { label: string; value: number; color: string; unit: string }[] = [];
+                for (const line of PERF_LINES) {
+                  if (!visibleLines.has(line.key)) continue;
+                  let total = 0;
+                  for (const model of models) {
+                    const dd = daily.find((a) => a.date === d && a.model === model);
+                    total += dd ? (dd as any)[line.key] ?? 0 : 0;
+                  }
+                  if (total > 0) {
+                    const unit = line.axis === "left" ? " TPS" : "ms";
+                    vals.push({ label: line.label, value: total, color: line.color, unit });
+                  }
+                }
+                if (vals.length > 0) {
+                  setHovered({
+                    x: rect.left + cx * scaleX,
+                    y: rect.top + PT * scaleY,
+                    date: d, values: vals,
+                  });
+                }
+              }}
+              onMouseLeave={() => setHovered(null)}
+            />
+          );
+        })}
       </svg>
+
+      {/* 悬浮提示 */}
+      {hovered && (
+        <div
+          className="fixed z-[200] pointer-events-none px-2.5 py-1.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-strong)] shadow-[var(--shadow-md)] text-[11px]"
+          style={{ left: hovered.x + 12, top: hovered.y + 8 }}
+        >
+          <div className="text-[var(--text-muted)] mb-1">{hovered.date}</div>
+          {hovered.values.map((v, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: v.color }} />
+              <span className="text-[var(--text-secondary)]">{v.label}</span>
+              <span className="ml-auto font-mono font-semibold text-[var(--text-primary)]">{v.value.toFixed(1)}{v.unit}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {PERF_LINES.map((line) => (
           <button key={line.key} onClick={() => toggleLine(line.key)}
