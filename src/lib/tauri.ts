@@ -136,6 +136,9 @@ export const discoverExistingProviders = () =>
 export const syncPresetModelsToSettings = () =>
   invoke<number>("sync_preset_models_to_settings");
 
+export const listConfiguredModelIds = () =>
+  invoke<string[]>("list_configured_model_ids");
+
 // ── File System Commands ─────────────────────────────────
 
 export const revealInExplorer = (path: string) =>

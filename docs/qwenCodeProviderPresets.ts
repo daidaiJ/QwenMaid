@@ -200,6 +200,13 @@ export const qwenCodeProviderPresets: QwenCodeProviderPreset[] = [
     iconColor: "#0F62FE",
     models: [
       {
+        id: "glm-5.2",
+        name: "GLM-5.2",
+        contextWindowSize: 1000000,
+        maxOutputTokens: 128000,
+        reasoning: { effort: "high" },
+      },
+      {
         id: "glm-5.1",
         name: "GLM-5.1",
         contextWindowSize: 204800,
@@ -247,6 +254,12 @@ export const qwenCodeProviderPresets: QwenCodeProviderPreset[] = [
     icon: "kimi",
     iconColor: "#6366F1",
     models: [
+      {
+        id: "kimi-k2.7",
+        name: "Kimi K2.7",
+        contextWindowSize: 252000,
+        maxOutputTokens: 32000,
+      },
       {
         id: "kimi-k2.6",
         name: "Kimi K2.6",
@@ -411,10 +424,23 @@ export const qwenCodeProviderPresets: QwenCodeProviderPreset[] = [
     iconColor: "#8B5CF6",
     models: [
       {
+        id: "glm-5.2",
+        name: "GLM-5.2 (via OpenCode)",
+        contextWindowSize: 1000000,
+        maxOutputTokens: 128000,
+        reasoning: { effort: "high" },
+      },
+      {
         id: "glm-5.1",
         name: "GLM-5.1 (via OpenCode)",
         contextWindowSize: 204800,
         maxOutputTokens: 131072,
+      },
+      {
+        id: "kimi-k2.7",
+        name: "Kimi K2.7 (via OpenCode)",
+        contextWindowSize: 252000,
+        maxOutputTokens: 32000,
       },
       {
         id: "kimi-k2.6",

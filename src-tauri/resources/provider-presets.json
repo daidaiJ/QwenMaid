@@ -132,7 +132,10 @@
         "authType": [
           "openai"
         ],
-        "maxOutputTokens": 384000
+        "maxOutputTokens": 384000,
+        "thinking": {
+          "effort": "high"
+        }
       },
       {
         "id": "deepseek-v4-flash",
@@ -151,6 +154,18 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
+      {
+        "id": "glm-5.2",
+        "name": "glm-5.2",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000,
+        "thinking": {
+          "effort": "high"
+        }
+      },
       {
         "id": "glm-5.1",
         "name": "glm-5.1",
@@ -220,6 +235,15 @@
     "proxyMode": "direct",
     "billingType": "pay_per_use",
     "models": [
+      {
+        "id": "kimi-k2.7",
+        "name": "kimi-k2.7",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 252000,
+        "maxOutputTokens": 32000
+      },
       {
         "id": "kimi-k2.6",
         "name": "kimi-k2.6",
@@ -633,6 +657,18 @@
     "billingType": "pay_per_use",
     "models": [
       {
+        "id": "glm-5.2",
+        "name": "glm-5.2",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 1000000,
+        "maxOutputTokens": 128000,
+        "thinking": {
+          "effort": "high"
+        }
+      },
+      {
         "id": "glm-5.1",
         "name": "glm-5.1",
         "authType": [
@@ -647,6 +683,15 @@
           "openai"
         ],
         "maxOutputTokens": 131072
+      },
+      {
+        "id": "kimi-k2.7",
+        "name": "kimi-k2.7",
+        "authType": [
+          "openai"
+        ],
+        "contextWindowSize": 252000,
+        "maxOutputTokens": 32000
       },
       {
         "id": "kimi-k2.6",
@@ -669,7 +714,10 @@
         "authType": [
           "openai"
         ],
-        "maxOutputTokens": 384000
+        "maxOutputTokens": 384000,
+        "thinking": {
+          "effort": "high"
+        }
       },
       {
         "id": "deepseek-v4-flash",

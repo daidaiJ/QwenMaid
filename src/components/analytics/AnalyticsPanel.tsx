@@ -303,6 +303,8 @@ function ModelLineChart({ rows, days: limitDays, height }: { rows: ModelDailyRow
   const [hovered, setHovered] = useState<{
     x: number; y: number; date: string; model: string; tokens: number; color: string;
   } | null>(null);
+  const [flip, setFlip] = useState(false);
+  const [tooltipWidth, setTooltipWidth] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // 过滤最近 N 天的数据
@@ -423,8 +425,15 @@ function ModelLineChart({ rows, days: limitDays, height }: { rows: ModelDailyRow
       {/* 悬浮提示 */}
       {hovered && (
         <div
+          ref={(el) => {
+            if (el) {
+              const w = el.getBoundingClientRect().width;
+              setTooltipWidth(w);
+              setFlip(hovered.x + 12 + w > window.innerWidth - 8);
+            }
+          }}
           className="fixed z-[200] pointer-events-none px-2.5 py-1.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-strong)] shadow-[var(--shadow-md)] text-[11px]"
-          style={{ left: hovered.x + 12, top: hovered.y - 10, transform: "translateY(-100%)" }}
+          style={{ left: flip ? hovered.x - 12 - (tooltipWidth ?? 0) : hovered.x + 12, top: hovered.y - 10, transform: "translateY(-100%)" }}
         >
           <div className="flex items-center gap-1.5 mb-0.5">
             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: hovered.color }} />

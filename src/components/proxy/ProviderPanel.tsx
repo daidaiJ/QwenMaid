@@ -14,6 +14,7 @@ import {
   syncPresetModelsToSettings,
 } from "@/lib/tauri";
 import type { Provider, Model, DiscoveredProvider } from "@/lib/tauri";
+import { invalidateModelIdsCache } from "@/hooks/useConfiguredModels";
 import { Plus, Trash2, Server, Cpu, RefreshCw, ChevronRight, Search } from "lucide-react";
 
 // ── 预设供应商模板 ────────────────────────────────────────
@@ -401,6 +402,7 @@ export function ProviderPanel() {
                       setPresetSyncing(true);
                       try {
                         const count = await syncPresetModelsToSettings();
+                        invalidateModelIdsCache();
                         setSyncResult(`已补齐 ${count} 个预设模型`);
                         refresh();
                         setTimeout(() => setSyncResult(null), 3000);

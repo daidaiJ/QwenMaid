@@ -21,6 +21,8 @@ pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
     pub mcp_shutdown: Arc<Mutex<Option<tokio::sync::watch::Sender<bool>>>>,
     pub global_memory_cache: Arc<Mutex<Vec<filesystem::MemoryFile>>>,
+    /// settings.json 中已配置的 model ID 缓存，sync 后清空
+    pub configured_model_ids: Arc<Mutex<Option<Vec<String>>>>,
 }
 
 // ── Provider Commands ────────────────────────────────────
@@ -844,6 +846,9 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                                 .collect();
                             gen.insert("modalities".to_string(), serde_json::Value::Object(mods));
                         }
+                        if let Some(ref thinking) = pm.thinking {
+                            gen.insert("thinking".to_string(), thinking.clone());
+                        }
                         if !gen.is_empty() {
                             config_json = serde_json::to_string(&gen).ok();
                         }
@@ -870,7 +875,7 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                         continue;
                     }
                     seen_ids.insert(pm.id.clone());
-                    // 从预设构建 generationConfig（contextWindowSize、maxOutputTokens、modalities）
+                    // 从预设构建 generationConfig（contextWindowSize、maxOutputTokens、modalities、thinking）
                     let preset_config = {
                         let mut gen = serde_json::Map::new();
                         if let Some(cws) = pm.context_window_size {
@@ -884,6 +889,9 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
                                 .map(|m| (m.clone(), serde_json::Value::Bool(true)))
                                 .collect();
                             gen.insert("modalities".to_string(), serde_json::Value::Object(mods));
+                        }
+                        if let Some(ref thinking) = pm.thinking {
+                            gen.insert("thinking".to_string(), thinking.clone());
                         }
                         if gen.is_empty() { None }
                         else { serde_json::to_string(&gen).ok() }
@@ -945,7 +953,7 @@ pub fn discover_existing_providers(_state: tauri::State<'_, AppState>) -> Result
 /// 匹配逻辑：按 baseUrl 域名 + authType 协议匹配预设
 /// 返回补齐的模型数量
 #[tauri::command]
-pub fn sync_preset_models_to_settings(_state: tauri::State<'_, AppState>) -> Result<usize, String> {
+pub fn sync_preset_models_to_settings(state: tauri::State<'_, AppState>) -> Result<usize, String> {
     let settings_path = config::user_settings_path();
     if !settings_path.exists() {
         return Err("settings.json 不存在".into());
@@ -1044,6 +1052,46 @@ pub fn sync_preset_models_to_settings(_state: tauri::State<'_, AppState>) -> Res
                 None => continue,
             };
 
+            // 纠正已有模型的 generationConfig（预设数据覆盖内置错误值）
+            for entry in entries_arr.iter_mut() {
+                if entry.get("baseUrl").and_then(|v| v.as_str()) != Some(base_url.as_str()) {
+                    continue;
+                }
+                let eid = entry.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                if eid.is_empty() { continue; }
+                if let Some(pm) = preset.models.iter().find(|m| m.id == eid) {
+                    // 仅当预设有显式字段时才覆盖，保留已有的 customHeaders 等
+                    let has_preset_fields = pm.context_window_size.is_some()
+                        || pm.max_output_tokens.is_some()
+                        || pm.thinking.is_some()
+                        || pm.input_modalities.is_some();
+                    if !has_preset_fields { continue; }
+
+                    let gen = entry
+                        .as_object_mut().unwrap()
+                        .entry("generationConfig")
+                        .or_insert_with(|| serde_json::json!({}));
+                    if let Some(gen_obj) = gen.as_object_mut() {
+                        if let Some(cws) = pm.context_window_size {
+                            gen_obj.insert("contextWindowSize".to_string(), serde_json::json!(cws));
+                        }
+                        if let Some(mot) = pm.max_output_tokens {
+                            gen_obj.insert("samplingParams".to_string(), serde_json::json!({ "max_tokens": mot }));
+                        }
+                        if let Some(ref thinking) = pm.thinking {
+                            gen_obj.insert("thinking".to_string(), thinking.clone());
+                        }
+                        if let Some(ref modalities) = pm.input_modalities {
+                            let mods: serde_json::Map<String, serde_json::Value> = modalities.iter()
+                                .map(|m| (m.clone(), serde_json::Value::Bool(true)))
+                                .collect();
+                            gen_obj.insert("modalities".to_string(), serde_json::Value::Object(mods));
+                        }
+                    }
+                    added_count += 1; // 复用计数器标记有变更
+                }
+            }
+
             // 添加缺失的预设模型
             for pm in &preset.models {
                 if existing_ids.contains(&pm.id) {
@@ -1056,6 +1104,31 @@ pub fn sync_preset_models_to_settings(_state: tauri::State<'_, AppState>) -> Res
                 let mut new_entry = template.clone();
                 new_entry["id"] = serde_json::Value::String(pm.id.clone());
                 new_entry["name"] = serde_json::Value::String(pm.name.clone());
+
+                // 从预设模型注入 generationConfig（contextWindowSize、maxOutputTokens、thinking、modalities）
+                {
+                    let gen = new_entry
+                        .as_object_mut().unwrap()
+                        .entry("generationConfig")
+                        .or_insert_with(|| serde_json::json!({}));
+                    if let Some(gen_obj) = gen.as_object_mut() {
+                        if let Some(cws) = pm.context_window_size {
+                            gen_obj.insert("contextWindowSize".to_string(), serde_json::json!(cws));
+                        }
+                        if let Some(mot) = pm.max_output_tokens {
+                            gen_obj.insert("samplingParams".to_string(), serde_json::json!({ "max_tokens": mot }));
+                        }
+                        if let Some(ref thinking) = pm.thinking {
+                            gen_obj.insert("thinking".to_string(), thinking.clone());
+                        }
+                        if let Some(ref modalities) = pm.input_modalities {
+                            let mods: serde_json::Map<String, serde_json::Value> = modalities.iter()
+                                .map(|m| (m.clone(), serde_json::Value::Bool(true)))
+                                .collect();
+                            gen_obj.insert("modalities".to_string(), serde_json::Value::Object(mods));
+                        }
+                    }
+                }
 
                 // 如果预设有非标准 authHeader（如 x-api-key），注入 generationConfig.customHeaders
                 if let Some(ref auth_header) = preset.auth_header {
@@ -1094,9 +1167,246 @@ pub fn sync_preset_models_to_settings(_state: tauri::State<'_, AppState>) -> Res
 
     if added_count > 0 {
         config::write_settings(&settings_path, &settings)?;
+        // 清空 model ID 缓存
+        if let Ok(mut cache) = state.configured_model_ids.lock() {
+            *cache = None;
+        }
     }
 
     Ok(added_count)
+}
+
+// ── Configured Model IDs（settings.json 已配置模型列表） ──
+
+/// 从 settings JSON 中提取所有去重排序的 model ID（纯函数，可测试）
+pub fn extract_configured_model_ids(settings: &Value) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    if let Some(mp) = settings.get("modelProviders").and_then(|v| v.as_object()) {
+        for (_protocol, entries) in mp {
+            if let Some(arr) = entries.as_array() {
+                for entry in arr {
+                    if let Some(id) = entry.get("id").and_then(|v| v.as_str()) {
+                        let id = id.to_string();
+                        if !id.is_empty() && !ids.contains(&id) {
+                            ids.push(id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ids.sort();
+    ids
+}
+
+/// 从 settings.json 的 modelProviders 提取所有已配置的 model ID（带缓存）
+#[tauri::command]
+pub fn list_configured_model_ids(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    // 先查缓存
+    if let Ok(cache) = state.configured_model_ids.lock() {
+        if let Some(ref ids) = *cache {
+            return Ok(ids.clone());
+        }
+    }
+
+    let settings_path = config::user_settings_path();
+    let settings = config::read_settings(&settings_path)
+        .map_err(|e| format!("read settings failed: {e}"))?;
+
+    let ids = extract_configured_model_ids(&settings);
+
+    // 写入缓存
+    if let Ok(mut cache) = state.configured_model_ids.lock() {
+        *cache = Some(ids.clone());
+    }
+
+    Ok(ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn make_state() -> AppState {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::init_db_with_conn(&conn);
+        AppState {
+            db: Arc::new(Mutex::new(conn)),
+            mcp_shutdown: Arc::new(Mutex::new(None)),
+            global_memory_cache: Arc::new(Mutex::new(Vec::new())),
+            configured_model_ids: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    // ── extract_configured_model_ids 纯函数测试 ──────────
+
+    #[test]
+    fn extract_ids_from_normal_settings() {
+        let settings: Value = serde_json::json!({
+            "modelProviders": {
+                "openai": [
+                    { "id": "gpt-4o", "name": "GPT-4o", "baseUrl": "https://api.openai.com/v1" },
+                    { "id": "gpt-4o-mini", "name": "GPT-4o Mini", "baseUrl": "https://api.openai.com/v1" }
+                ],
+                "anthropic": [
+                    { "id": "claude-sonnet-4-20250514", "name": "Claude", "baseUrl": "https://api.anthropic.com" }
+                ]
+            }
+        });
+        let ids = extract_configured_model_ids(&settings);
+        assert_eq!(ids, vec!["claude-sonnet-4-20250514", "gpt-4o", "gpt-4o-mini"]);
+    }
+
+    #[test]
+    fn extract_ids_deduplicates_same_id_across_protocols() {
+        let settings: Value = serde_json::json!({
+            "modelProviders": {
+                "openai": [
+                    { "id": "mimo-v2.5", "name": "MiMo", "baseUrl": "https://api.xiaomimimo.com/v1" }
+                ],
+                "anthropic": [
+                    { "id": "mimo-v2.5", "name": "MiMo", "baseUrl": "https://api.xiaomimimo.com" }
+                ]
+            }
+        });
+        let ids = extract_configured_model_ids(&settings);
+        assert_eq!(ids, vec!["mimo-v2.5"]);
+    }
+
+    #[test]
+    fn extract_ids_empty_when_no_model_providers() {
+        let settings: Value = serde_json::json!({});
+        let ids = extract_configured_model_ids(&settings);
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn extract_ids_empty_when_providers_empty() {
+        let settings: Value = serde_json::json!({ "modelProviders": {} });
+        let ids = extract_configured_model_ids(&settings);
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn extract_ids_skips_empty_id() {
+        let settings: Value = serde_json::json!({
+            "modelProviders": {
+                "openai": [
+                    { "id": "", "name": "empty" },
+                    { "id": "gpt-4o", "name": "GPT-4o" },
+                    { "name": "no-id-field" }
+                ]
+            }
+        });
+        let ids = extract_configured_model_ids(&settings);
+        assert_eq!(ids, vec!["gpt-4o"]);
+    }
+
+    #[test]
+    fn extract_ids_sorted_alphabetically() {
+        let settings: Value = serde_json::json!({
+            "modelProviders": {
+                "openai": [
+                    { "id": "zzz-last" },
+                    { "id": "aaa-first" },
+                    { "id": "mmm-middle" }
+                ]
+            }
+        });
+        let ids = extract_configured_model_ids(&settings);
+        assert_eq!(ids, vec!["aaa-first", "mmm-middle", "zzz-last"]);
+    }
+
+    #[test]
+    fn extract_ids_from_multiple_protocols() {
+        let settings: Value = serde_json::json!({
+            "modelProviders": {
+                "openai": [
+                    { "id": "deepseek-v4-pro" },
+                    { "id": "kimi-k2.7" }
+                ],
+                "anthropic": [
+                    { "id": "minimax-m3" },
+                    { "id": "qwen3.7-max" }
+                ]
+            }
+        });
+        let ids = extract_configured_model_ids(&settings);
+        assert_eq!(ids, vec!["deepseek-v4-pro", "kimi-k2.7", "minimax-m3", "qwen3.7-max"]);
+    }
+
+    // ── 缓存行为测试 ──────────────────────────────────────
+
+    #[test]
+    fn cache_initially_empty() {
+        let state = make_state();
+        let guard = state.configured_model_ids.lock().unwrap();
+        assert!(guard.is_none());
+    }
+
+    #[test]
+    fn cache_populates_and_returns_same_data() {
+        let state = make_state();
+        // 手动填充缓存
+        {
+            let mut guard = state.configured_model_ids.lock().unwrap();
+            *guard = Some(vec!["model-a".into(), "model-b".into()]);
+        }
+        // 读取
+        {
+            let guard = state.configured_model_ids.lock().unwrap();
+            assert_eq!(*guard, Some(vec!["model-a".into(), "model-b".into()]));
+        }
+    }
+
+    #[test]
+    fn cache_clear_on_sync() {
+        let state = make_state();
+        // 填充
+        {
+            let mut guard = state.configured_model_ids.lock().unwrap();
+            *guard = Some(vec!["old-model".into()]);
+        }
+        // 模拟 sync 后清空
+        {
+            let mut guard = state.configured_model_ids.lock().unwrap();
+            *guard = None;
+        }
+        // 验证已清空
+        {
+            let guard = state.configured_model_ids.lock().unwrap();
+            assert!(guard.is_none());
+        }
+    }
+
+    // ── 临时文件集成测试：list_configured_model_ids 端到端 ─
+
+    #[test]
+    fn list_ids_from_temp_settings_file() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir().join("agentbox_test_model_ids");
+        let _ = std::fs::create_dir_all(&dir);
+        let settings_path = dir.join("settings.json");
+
+        let settings_content = serde_json::json!({
+            "modelProviders": {
+                "openai": [
+                    { "id": "gpt-4o", "baseUrl": "https://api.openai.com/v1" },
+                    { "id": "glm-5.2", "baseUrl": "https://opencode.ai/zen/go/v1" }
+                ]
+            }
+        });
+        let mut f = std::fs::File::create(&settings_path).unwrap();
+        write!(f, "{}", serde_json::to_string_pretty(&settings_content).unwrap()).unwrap();
+
+        let settings = config::read_settings(&settings_path).unwrap();
+        let ids = extract_configured_model_ids(&settings);
+        assert_eq!(ids, vec!["glm-5.2", "gpt-4o"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 // ── Proxy Status Commands ────────────────────────────────

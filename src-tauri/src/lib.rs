@@ -96,6 +96,7 @@ pub fn run() {
             commands::set_usage_autostart,
             commands::discover_existing_providers,
             commands::sync_preset_models_to_settings,
+            commands::list_configured_model_ids,
             commands::get_proxy_status,
             commands::get_proxy_provider_stats,
             commands::reset_provider_counts,
@@ -123,6 +124,7 @@ pub fn run() {
                 db: db.clone(),
                 mcp_shutdown: mcp_shutdown.clone(),
                 global_memory_cache: Arc::new(std::sync::Mutex::new(Vec::new())),
+                configured_model_ids: Arc::new(std::sync::Mutex::new(None)),
             });
 
             // 延迟启动代理服务器（不阻塞 setup）

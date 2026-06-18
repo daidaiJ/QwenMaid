@@ -81,6 +81,9 @@
         "generationConfig": {
           "samplingParams": {
             "max_tokens": 384000
+          },
+          "thinking": {
+            "effort": "high"
           }
         }
       },
@@ -92,6 +95,21 @@
         "generationConfig": {
           "samplingParams": {
             "max_tokens": 384000
+          }
+        }
+      },
+      {
+        "id": "glm-5.2",
+        "name": "glm-5.2",
+        "envKey": "ZHIPU_API_KEY",
+        "baseUrl": "https://open.bigmodel.cn/api/coding/paas",
+        "generationConfig": {
+          "contextWindowSize": 1000000,
+          "samplingParams": {
+            "max_tokens": 128000
+          },
+          "thinking": {
+            "effort": "high"
           }
         }
       },
@@ -146,6 +164,18 @@
         "name": "qwen-turbo",
         "envKey": "DASHSCOPE_API_KEY",
         "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode"
+      },
+      {
+        "id": "kimi-k2.7",
+        "name": "kimi-k2.7",
+        "envKey": "MOONSHOT_API_KEY",
+        "baseUrl": "https://api.moonshot.cn",
+        "generationConfig": {
+          "contextWindowSize": 252000,
+          "samplingParams": {
+            "max_tokens": 32000
+          }
+        }
       },
       {
         "id": "kimi-k2.6",
@@ -357,6 +387,21 @@
         "baseUrl": "https://maas-token-api.cn-huabei-1.xf-yun.com"
       },
       {
+        "id": "glm-5.2",
+        "name": "glm-5.2",
+        "envKey": "OPENCODE_API_KEY",
+        "baseUrl": "https://opencode.ai/zen/go/v1",
+        "generationConfig": {
+          "contextWindowSize": 1000000,
+          "samplingParams": {
+            "max_tokens": 128000
+          },
+          "thinking": {
+            "effort": "high"
+          }
+        }
+      },
+      {
         "id": "glm-5.1",
         "name": "glm-5.1",
         "envKey": "OPENCODE_API_KEY",
@@ -375,6 +420,18 @@
         "generationConfig": {
           "samplingParams": {
             "max_tokens": 131072
+          }
+        }
+      },
+      {
+        "id": "kimi-k2.7",
+        "name": "kimi-k2.7",
+        "envKey": "OPENCODE_API_KEY",
+        "baseUrl": "https://opencode.ai/zen/go/v1",
+        "generationConfig": {
+          "contextWindowSize": 252000,
+          "samplingParams": {
+            "max_tokens": 32000
           }
         }
       },
@@ -403,6 +460,9 @@
         "generationConfig": {
           "samplingParams": {
             "max_tokens": 384000
+          },
+          "thinking": {
+            "effort": "high"
           }
         }
       },

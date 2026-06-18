@@ -217,6 +217,8 @@ function TokenAreaChart({ daily, selectedModels }: {
   const [hovered, setHovered] = useState<{
     x: number; y: number; date: string; values: { label: string; value: number; color: string }[];
   } | null>(null);
+  const [flip, setFlip] = useState(false);
+  const [tooltipWidth, setTooltipWidth] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const toggleLine = (key: string) => {
     setVisibleLines((prev) => {
@@ -328,8 +330,15 @@ function TokenAreaChart({ daily, selectedModels }: {
       {/* 悬浮提示 */}
       {hovered && (
         <div
+          ref={(el) => {
+            if (el) {
+              const w = el.getBoundingClientRect().width;
+              setTooltipWidth(w);
+              setFlip(hovered.x + 12 + w > window.innerWidth - 8);
+            }
+          }}
           className="fixed z-[200] pointer-events-none px-2.5 py-1.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-strong)] shadow-[var(--shadow-md)] text-[11px]"
-          style={{ left: hovered.x + 12, top: hovered.y + 8 }}
+          style={{ left: flip ? hovered.x - 12 - (tooltipWidth ?? 0) : hovered.x + 12, top: hovered.y + 8 }}
         >
           <div className="text-[var(--text-muted)] mb-1">{hovered.date}</div>
           {hovered.values.map((v, i) => (
@@ -373,6 +382,8 @@ function PerfLineChart({ daily, selectedModels, hasPerfData }: {
   const [hovered, setHovered] = useState<{
     x: number; y: number; date: string; values: { label: string; value: number; color: string; unit: string }[];
   } | null>(null);
+  const [flip, setFlip] = useState(false);
+  const [tooltipWidth, setTooltipWidth] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const toggleLine = (key: string) => {
@@ -504,8 +515,15 @@ function PerfLineChart({ daily, selectedModels, hasPerfData }: {
       {/* 悬浮提示 */}
       {hovered && (
         <div
+          ref={(el) => {
+            if (el) {
+              const w = el.getBoundingClientRect().width;
+              setTooltipWidth(w);
+              setFlip(hovered.x + 12 + w > window.innerWidth - 8);
+            }
+          }}
           className="fixed z-[200] pointer-events-none px-2.5 py-1.5 rounded-lg bg-[var(--bg-panel)] border border-[var(--border-strong)] shadow-[var(--shadow-md)] text-[11px]"
-          style={{ left: hovered.x + 12, top: hovered.y + 8 }}
+          style={{ left: flip ? hovered.x - 12 - (tooltipWidth ?? 0) : hovered.x + 12, top: hovered.y + 8 }}
         >
           <div className="text-[var(--text-muted)] mb-1">{hovered.date}</div>
           {hovered.values.map((v, i) => (

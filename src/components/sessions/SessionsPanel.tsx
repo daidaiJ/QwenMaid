@@ -457,6 +457,16 @@ function ToolCallInline({
   name: string;
   preview: string | null;
 }) {
+  // 没有预览内容时，简单显示工具名
+  if (!preview) {
+    return (
+      <div className="mx-3 mb-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#d29922]/10 text-[10px] text-[#d29922]">
+        <Wrench size={10} />
+        <span className="font-medium">{name}</span>
+      </div>
+    );
+  }
+
   const [open, setOpen] = useState(false);
   return (
     <div className="mx-3 mb-1.5 rounded-lg border border-[#d29922]/20 bg-[#d2992208]">
@@ -467,13 +477,13 @@ function ToolCallInline({
         {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         <Wrench size={10} />
         <span className="font-medium">{name}</span>
-        {preview && !open && (
+        {!open && (
           <span className="text-[var(--text-muted)] truncate ml-1">
             {preview}
           </span>
         )}
       </button>
-      {open && preview && (
+      {open && (
         <div className="px-2 pb-2">
           <pre className="text-[10px] font-mono text-[var(--text-primary)] bg-[var(--bg-input)] rounded p-1.5 overflow-auto max-h-32 whitespace-pre-wrap break-all">
             {preview}

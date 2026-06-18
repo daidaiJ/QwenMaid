@@ -102,6 +102,11 @@
 
 /* ── 全局重置 ───────────────────────────────────────────── */
 
+html {
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,
@@ -110,8 +115,12 @@ body {
   line-height: 1.5;
   background: var(--bg-body);
   color: var(--text-primary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* ── 文本选中色 ────────────────────────────────────────── */

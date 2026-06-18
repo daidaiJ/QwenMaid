@@ -34,6 +34,8 @@ pub struct ModelPreset {
     pub max_output_tokens: Option<u64>,
     #[serde(rename = "inputModalities")]
     pub input_modalities: Option<Vec<String>>,
+    /// 推理/思考配置（如 thinking: { effort: "high" }）
+    pub thinking: Option<serde_json::Value>,
 }
 
 /// 预设版本元数据（用于更新检查）
@@ -154,7 +156,7 @@ mod tests {
         let oc_openai = presets.iter().find(|p| p.name == "OpenCode Go (OpenAI)").unwrap();
         assert_eq!(oc_openai.env_prefix, "OPENCODE_API_KEY");
         let oc_openai_ids: Vec<&str> = oc_openai.models.iter().map(|m| m.id.as_str()).collect();
-        for expected in &["glm-5.1", "kimi-k2.6", "kimi-k2.5", "deepseek-v4-pro", "deepseek-v4-flash", "mimo-v2.5", "mimo-v2.5-pro"] {
+        for expected in &["glm-5.2", "glm-5.1", "kimi-k2.7", "kimi-k2.6", "kimi-k2.5", "deepseek-v4-pro", "deepseek-v4-flash", "mimo-v2.5", "mimo-v2.5-pro"] {
             assert!(oc_openai_ids.contains(expected), "OpenCode Go (OpenAI) 缺少模型: {}", expected);
         }
         // model ID 唯一性
@@ -175,6 +177,13 @@ mod tests {
         assert_eq!(dspro.max_output_tokens, Some(384000));
         let kk26 = oc_openai.models.iter().find(|m| m.id == "kimi-k2.6").unwrap();
         assert_eq!(kk26.max_output_tokens, Some(262144));
+        let kk27 = oc_openai.models.iter().find(|m| m.id == "kimi-k2.7").unwrap();
+        assert_eq!(kk27.context_window_size, Some(252000));
+        assert_eq!(kk27.max_output_tokens, Some(32000));
+        let glm52 = oc_openai.models.iter().find(|m| m.id == "glm-5.2").unwrap();
+        assert_eq!(glm52.context_window_size, Some(1000000));
+        assert_eq!(glm52.max_output_tokens, Some(128000));
+        assert!(glm52.thinking.is_some(), "glm-5.2 应有 thinking 配置");
 
         // ── OpenCode Go (Anthropic) ──
         let oc_anth = presets.iter().find(|p| p.name == "OpenCode Go (Anthropic)").unwrap();
@@ -215,6 +224,9 @@ mod tests {
                 .map(|m| (m.clone(), serde_json::Value::Bool(true)))
                 .collect();
             gen.insert("modalities".to_string(), serde_json::Value::Object(mods));
+        }
+        if let Some(ref thinking) = mimo_model.thinking {
+            gen.insert("thinking".to_string(), thinking.clone());
         }
         let config_json = serde_json::to_string(&gen).unwrap();
 
@@ -258,6 +270,9 @@ mod tests {
                             .map(|m| (m.clone(), serde_json::Value::Bool(true)))
                             .collect();
                         gen.insert("modalities".to_string(), serde_json::Value::Object(mods));
+                    }
+                    if let Some(ref thinking) = model.thinking {
+                        gen.insert("thinking".to_string(), thinking.clone());
                     }
                     // Anthropic 协议 + 非标准 authHeader → 注入 customHeaders
                     if auth_type == "anthropic" {
