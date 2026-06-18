@@ -23,10 +23,9 @@
 
 可视化管理 `settings.json` 中的模型提供商和 API Key。内置 13+ 预设供应商模板（OpenAI、Anthropic、DeepSeek、智谱 GLM、Kimi、MiMo、火山豆包、阶跃星辰、MiniMax、讯飞星火等），一键导入即可使用。
 
-- 按 `baseUrl` 域名 + `authType` 协议自动匹配预设，补齐缺失模型
-- 预设模型自动注入 `contextWindowSize`、`maxOutputTokens`、`thinking`、`inputModalities` 等 generationConfig
-- 已有模型的 generationConfig 也会被预设数据纠正（修复 Qwen Code 内置预设上下文错误）
-- 模型 ID 缓存：前端 + 后端双层缓存，sync 后自动失效
+- **用户配置发现：** 自动解析 `settings.json` 中已有供应商配置，识别已配置的模型和 API Key
+- **智能合并：** 新增供应商/模型时采用 merge 策略，保留用户已有配置不覆盖；仅上下文窗口大小和自定义鉴权头（如 `x-api-key`）强制同步预设值
+- 按 `baseUrl` 域名 + `authType` 协议自动匹配预设，补齐缺失模型和 generationConfig
 
 ### 本地路由代理
 
@@ -34,9 +33,8 @@
 
 - **鉴权转换：** Bearer → x-api-key / x-goog-api-key / 自定义头，按供应商自动选择
 - **多供应商路由：** 按计费类型、延迟、成功率加权选择最优上游
-- **客户端池热切换：** Provider 配置变更后自动重建连接池
-- **上下文压缩：** 集成 [only-cc-lite](https://github.com/daidaiJ/only-cc-lite)，Provider 级开关，请求转发前自动压缩（节省 40-90% tokens）
-- **用量追踪：** 从 SSE 流实时提取 token 使用量、延迟、首字节时间
+- **上下文压缩：** 集成 [only-cc-lite](https://github.com/daidaiJ/only-cc-lite)，节省 40-90% tokens
+- **用量追踪：** 从 SSE 流实时提取 token 使用量和延迟指标
 
 ### 用量分析
 
@@ -60,11 +58,9 @@
 
 管理 `.qwen/agents/` 下的智能体定义文件，三栏布局（列表 / 编辑器 / 元数据）：
 
-- YAML frontmatter 交互式编辑：`model`、`approvalMode`、`color` 字段支持单选下拉
-- `model` 下拉动态读取 settings.json 已配置的全部模型 ID，含 `inherit` / `fast` 快捷选项
-- 修改仅更新本地状态，用户主动点击「保存」才写入 .md 文件
-- 保存时只替换 YAML frontmatter 部分，不破坏 `---` 分隔线和正文内容
-- 改回原值时自动隐藏保存按钮，避免无效写入
+- YAML frontmatter 交互式编辑：`model`、`approvalMode`、`color` 等字段支持下拉选择
+- `model` 动态读取已配置模型列表，含 `inherit` / `fast` 快捷选项
+- 保存时只替换 frontmatter，不破坏正文内容
 
 ### 配置编辑器
 
@@ -88,7 +84,6 @@
 
 - 浏览、编辑、删除已安装的 Qwen Code 技能
 - 显示来源（扩展 / 用户）和描述
-- 技能市场：从 skills.sh 公共仓库搜索和安装技能
 
 ### 扩展管理
 
