@@ -12,8 +12,10 @@ import {
   syncConfigToSettings,
   discoverExistingProviders,
   syncPresetModelsToSettings,
+  testProviderKey,
+  updateProviderKey,
 } from "@/lib/tauri";
-import type { Provider, Model, DiscoveredProvider } from "@/lib/tauri";
+import type { Provider, Model, DiscoveredProvider, TestKeyResult } from "@/lib/tauri";
 import { invalidateModelIdsCache } from "@/hooks/useConfiguredModels";
 import { Plus, Trash2, Server, Cpu, RefreshCw, ChevronRight, Search } from "lucide-react";
 
@@ -504,6 +506,21 @@ function ProviderDetail({
   const [saving, setSaving] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
 
+  // SK 编辑状态
+  const [skExpanded, setSkExpanded] = useState(false);
+  const [skValue, setSkValue] = useState("");
+  const [skVisible, setSkVisible] = useState(false);
+  const [skTesting, setSkTesting] = useState(false);
+  const [skTestResult, setSkTestResult] = useState<TestKeyResult | null>(null);
+  const [skSaving, setSkSaving] = useState(false);
+
+  const hasKey = !!provider.api_key_value;
+  const maskedKey = hasKey
+    ? provider.api_key_value!.length <= 10
+      ? provider.api_key_value!
+      : `${provider.api_key_value!.slice(0, 6)}${'·'.repeat(4)}${provider.api_key_value!.slice(-4)}`
+    : "";
+
   // 是否使用本地路由代理（system/custom = 代理，direct = 直连）
   const useLocalProxy = form.proxyMode === "system" || form.proxyMode === "custom";
 
@@ -635,6 +652,133 @@ function ProviderDetail({
           </div>
           {/* 高级代理设置已移除，默认使用系统代理 */}
         </div>
+
+        {/* ── SK 修改（折叠内嵌） ───────────────────── */}
+        <div className="border-t border-[var(--border)] pt-3">
+          <button
+            onClick={() => {
+              setSkExpanded(!skExpanded);
+              if (!skExpanded) {
+                setSkValue("");
+                setSkTestResult(null);
+              }
+            }}
+            className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors w-full text-left"
+          >
+            <span className="text-[10px] transition-transform" style={{ display: "inline-block", transform: skExpanded ? "rotate(90deg)" : undefined }}>
+              ▶
+            </span>
+            修改 SK
+            {hasKey && !skExpanded && (
+              <span className="ml-1 text-[11px] text-[var(--accent)]">
+                {maskedKey}
+              </span>
+            )}
+            {!hasKey && !skExpanded && (
+              <span className="ml-1 text-[11px] text-[#8b949e]">未设置</span>
+            )}
+          </button>
+
+          {skExpanded && (
+            <div className="mt-2 space-y-2 pl-5">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={skVisible ? "text" : "password"}
+                    value={skValue}
+                    onChange={(e) => {
+                      setSkValue(e.target.value);
+                      setSkTestResult(null);
+                    }}
+                    placeholder={hasKey ? "输入新密钥（留空则清除）" : "输入 API Key"}
+                    className="w-full h-8 bg-[var(--bg-input)] border border-[var(--border)] rounded-sm px-2 pr-8 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[#007fd4] outline-none font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSkVisible(!skVisible)}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                    title={skVisible ? "隐藏" : "显示"}
+                  >
+                    {skVisible ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    if (!skValue.trim()) return;
+                    setSkTesting(true);
+                    setSkTestResult(null);
+                    try {
+                      const result = await testProviderKey(provider.id, skValue.trim());
+                      setSkTestResult(result);
+                    } catch (e: any) {
+                      setSkTestResult({ success: false, models: [], error: e?.toString?.() ?? "测试失败" });
+                    } finally {
+                      setSkTesting(false);
+                    }
+                  }}
+                  disabled={skTesting || !skValue.trim()}
+                  className="px-3 h-7 text-xs bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] rounded-sm hover:bg-[var(--bg-card)] disabled:opacity-40 transition-colors"
+                >
+                  {skTesting ? "测试中…" : "测试连接"}
+                </button>
+                <button
+                  onClick={async () => {
+                    setSkSaving(true);
+                    try {
+                      await updateProviderKey(provider.id, skValue.trim());
+                      setSkExpanded(false);
+                      setSkValue("");
+                      setSkTestResult(null);
+                      onRefresh();
+                    } catch (e: any) {
+                      alert(`保存失败: ${e?.toString?.() ?? e}`);
+                    } finally {
+                      setSkSaving(false);
+                    }
+                  }}
+                  disabled={skSaving}
+                  className="px-3 h-7 text-xs bg-[var(--accent)] text-white rounded-sm hover:bg-[var(--accent-hover)] disabled:opacity-40 transition-colors"
+                >
+                  {skSaving ? "保存中…" : "保存"}
+                </button>
+              </div>
+
+              {/* 测试结果 */}
+              {skTestResult && (
+                <div className={`text-[11px] rounded-sm px-2 py-1.5 ${
+                  skTestResult.success
+                    ? "bg-[#d4edda] text-[#155724] border border-[#c3e6cb] dark:bg-[#1a3a1a] dark:text-[#7ee07e] dark:border-[#2d5a2d]"
+                    : "bg-[#fde8e8] text-[#d32f2f] border border-[#f5c6cb] dark:bg-[#4d1a1a] dark:text-[#f48771] dark:border-[#5a2a2a]"
+                }`}>
+                  {skTestResult.success
+                    ? `✓ 连接成功，发现 ${skTestResult.models.length} 个模型`
+                    : `✗ ${skTestResult.error || "连接失败"}`
+                  }
+                  {skTestResult.success && skTestResult.models.length > 0 && (
+                    <div className="mt-0.5 text-[10px] opacity-70 truncate">
+                      {skTestResult.models.slice(0, 8).join("、")}
+                      {skTestResult.models.length > 8 && ` 等 ${skTestResult.models.length} 个`}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <button
           onClick={handleSave}
           disabled={saving}
@@ -902,6 +1046,7 @@ function AddProviderDialog({
       proxyMode: form.proxyMode,
       proxyUrl: form.proxyUrl || undefined,
       authHeader: form.authHeader || undefined,
+      apiKeyValue: apiKey.trim() || undefined,
       billingType: form.billingType,
     });
 
@@ -936,6 +1081,14 @@ function AddProviderDialog({
 
   // 导入已发现的供应商
   const importDiscovered = async (dp: DiscoveredProvider) => {
+    // 从 settings.json env 读取已配置的 key
+    let keyValue: string | undefined;
+    try {
+      const settings = await readSettingsFromTauri();
+      const env = (settings.env as Record<string, string> | undefined) ?? {};
+      keyValue = env[dp.env_key] || undefined;
+    } catch { /* ignore */ }
+
     const provider = await createProvider({
       name: dp.preset_name ?? dp.name,
       baseUrl: dp.base_url,
@@ -943,6 +1096,7 @@ function AddProviderDialog({
       proxyMode: "direct",
       billingType: "pay_per_use",
       authHeader: dp.protocol === "anthropic" ? "x-api-key" : undefined,
+      apiKeyValue: keyValue,
     });
     for (const m of dp.models) {
       await createModel({

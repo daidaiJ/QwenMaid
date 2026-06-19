@@ -10,6 +10,7 @@ export interface Provider {
   proxy_mode: "system" | "custom" | "direct";
   proxy_url: string | null;
   auth_header: string | null;
+  api_key_value: string | null;
   billing_type: "plan" | "pay_per_use";
   is_active: boolean;
   compress_enabled: boolean;
@@ -42,6 +43,7 @@ export const createProvider = (args: {
   proxyMode?: string;
   proxyUrl?: string;
   authHeader?: string;
+  apiKeyValue?: string;
   billingType?: string;
   compressEnabled?: boolean;
 }) => invoke<Provider>("create_provider", args);
@@ -105,6 +107,20 @@ export const syncConfigToSettings = () =>
 
 export const previewSyncConfig = () =>
   invoke<Record<string, unknown>>("preview_sync_config");
+
+// ── SK 管理 ──────────────────────────────────────────────
+
+export interface TestKeyResult {
+  success: boolean;
+  models: string[];
+  error: string | null;
+}
+
+export const testProviderKey = (providerId: number, key: string) =>
+  invoke<TestKeyResult>("test_provider_key", { providerId, key });
+
+export const updateProviderKey = (providerId: number, newKey: string) =>
+  invoke<Provider[]>("update_provider_key", { providerId, newKey });
 
 // ── Provider Discovery ───────────────────────────────────
 

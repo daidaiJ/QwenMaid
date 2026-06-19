@@ -109,6 +109,222 @@ pub fn delete_provider(state: tauri::State<'_, AppState>, id: i64) -> Result<(),
     providers::delete_provider(&db, id)
 }
 
+// ── SK 管理 ────────────────────────────────────────────
+
+/// 测试供应商 API Key 是否可用（调上游 /v1/models）
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TestKeyResult {
+    pub success: bool,
+    pub models: Vec<String>,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn test_provider_key(
+    state: tauri::State<'_, AppState>,
+    provider_id: i64,
+    key: String,
+) -> Result<TestKeyResult, String> {
+    let (base_url, auth_header_override, _api_key_env) = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let provider = providers::get_provider(&db, provider_id)?;
+        (provider.base_url, provider.auth_header, provider.api_key_env)
+    };
+
+    // 获取供应商的模型列表，取第一个 auth_type 作为测试协议
+    let models = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        providers::list_models(&db, Some(provider_id))?
+    };
+
+    let primary_auth_type = models
+        .first()
+        .and_then(|m| {
+            // auth_type 可能是 JSON 数组如 ["anthropic","openai"]，取第一个
+            let auth_str = &m.auth_type;
+            if let Ok(arr) = serde_json::from_str::<Vec<String>>(auth_str) {
+                arr.first().cloned()
+            } else {
+                Some(auth_str.clone())
+            }
+        })
+        .unwrap_or_else(|| "openai".to_string());
+
+    use crate::proxy::auth::AuthStrategy;
+    let base_strategy = AuthStrategy::from_auth_type(&primary_auth_type);
+    let strategy = AuthStrategy::with_override(base_strategy, auth_header_override.as_deref());
+
+    // 构造鉴权头
+    let mut headers_map = std::collections::HashMap::new();
+    match &strategy {
+        AuthStrategy::Passthrough => {
+            headers_map.insert("Authorization".to_string(), format!("Bearer {}", key));
+        }
+        AuthStrategy::BearerToApiKey => {
+            headers_map.insert("x-api-key".to_string(), key.clone());
+            headers_map.insert("anthropic-version".to_string(), "2023-06-01".to_string());
+        }
+        AuthStrategy::BearerToGoogleKey => {
+            headers_map.insert("x-goog-api-key".to_string(), key.clone());
+        }
+        AuthStrategy::CustomHeader(h) => {
+            headers_map.insert(h.clone(), key.clone());
+        }
+    }
+
+    // 发起请求
+    let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let mut req = client.get(&url);
+    for (k, v) in &headers_map {
+        req = req.header(k.as_str(), v.as_str());
+    }
+
+    match req.send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            let body_text = resp.text().await.unwrap_or_default();
+
+            if status.is_success() {
+                // 尝试解析 OpenAI 格式的模型列表
+                let models: Vec<String> = serde_json::from_str::<Value>(&body_text)
+                    .ok()
+                    .and_then(|v| v.get("data").cloned())
+                    .and_then(|data| {
+                        data.as_array().map(|arr| {
+                            arr.iter()
+                                .filter_map(|m| m.get("id").and_then(|id| id.as_str().map(String::from)))
+                                .collect()
+                        })
+                    })
+                    .unwrap_or_default();
+
+                Ok(TestKeyResult {
+                    success: true,
+                    models,
+                    error: None,
+                })
+            } else {
+                // 尝试提取错误信息
+                let err_msg = serde_json::from_str::<Value>(&body_text)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("error")
+                            .and_then(|e| e.get("message").or_else(|| e.get("code")))
+                            .and_then(|m| m.as_str().map(String::from))
+                    })
+                    .unwrap_or_else(|| format!("HTTP {}", status));
+
+                Ok(TestKeyResult {
+                    success: false,
+                    models: vec![],
+                    error: Some(err_msg),
+                })
+            }
+        }
+        Err(e) => Ok(TestKeyResult {
+            success: false,
+            models: vec![],
+            error: Some(format!("网络请求失败: {}", e)),
+        }),
+    }
+}
+
+/// 更新供应商 API Key（按 envPrefix 批量更新 + 同步 .env 文件）
+#[tauri::command]
+pub fn update_provider_key(
+    state: tauri::State<'_, AppState>,
+    provider_id: i64,
+    new_key: String,
+) -> Result<Vec<Provider>, String> {
+    let env_prefix = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let provider = providers::get_provider(&db, provider_id)?;
+        provider.api_key_env.clone()
+    };
+
+    if env_prefix.is_empty() {
+        return Err("该供应商未配置环境变量名".into());
+    }
+
+    // 批量更新所有共享同一 env_prefix 的供应商
+    let updated = {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let targets = providers::list_providers_by_env(&db, &env_prefix)?;
+
+        for p in &targets {
+            let current_key = p.api_key_value.clone();
+            providers::update_provider(
+                &db,
+                p.id,
+                &providers::UpdateProvider {
+                    name: None,
+                    base_url: None,
+                    api_key_env: None,
+                    proxy_mode: None,
+                    proxy_url: None,
+                    auth_header: None,
+                    api_key_value: if new_key.is_empty() { None } else { Some(new_key.clone()) },
+                    billing_type: None,
+                    is_active: None,
+                    compress_enabled: None,
+                },
+            )?;
+            // 如果 key 变空，需要显式清空（COALESCE 对空字符串不生效）
+            if new_key.is_empty() && current_key.is_some() {
+                let _ = db.execute(
+                    "UPDATE providers SET api_key_value = NULL, updated_at = datetime('now') WHERE id = ?1",
+                    [p.id],
+                );
+            }
+        }
+
+        providers::list_providers_by_env(&db, &env_prefix)?
+    };
+
+    // 同步到 settings.json 和 .env 文件
+    let settings_path = config::user_settings_path();
+    let mut settings = if settings_path.exists() {
+        config::read_settings(&settings_path)?
+    } else {
+        json!({})
+    };
+
+    // 更新 settings.json 的 env 段
+    let env_obj = settings
+        .get_mut("env")
+        .and_then(|v| v.as_object_mut());
+    if let Some(env) = env_obj {
+        if new_key.is_empty() {
+            env.remove(&env_prefix);
+        } else {
+            env.insert(env_prefix.clone(), Value::String(new_key.clone()));
+        }
+    } else if !new_key.is_empty() {
+        let mut env = Map::new();
+        env.insert(env_prefix.clone(), Value::String(new_key.clone()));
+        settings["env"] = Value::Object(env);
+    }
+
+    config::write_settings(&settings_path, &settings)?;
+
+    // 同步 .env 文件
+    let env_map = settings
+        .get("env")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default();
+    if !env_map.is_empty() {
+        config::write_env_file(&env_map)?;
+    }
+
+    Ok(updated)
+}
+
 // ── Model Commands ───────────────────────────────────────
 
 #[tauri::command]

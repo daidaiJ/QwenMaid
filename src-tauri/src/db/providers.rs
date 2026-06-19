@@ -380,3 +380,32 @@ pub fn delete_model(conn: &Connection, id: i64) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// 按环境变量名查找所有供应商（用于同一 envPrefix 批量更新 SK）
+pub fn list_providers_by_env(conn: &Connection, env_prefix: &str) -> Result<Vec<Provider>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, name, base_url, api_key_env, proxy_mode, proxy_url, auth_header, api_key_value, billing_type, is_active, compress_enabled, created_at, updated_at FROM providers WHERE api_key_env = ?1 ORDER BY id")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([env_prefix], |row| {
+            Ok(Provider {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                base_url: row.get(2)?,
+                api_key_env: row.get(3)?,
+                proxy_mode: row.get(4)?,
+                proxy_url: row.get(5)?,
+                auth_header: row.get(6)?,
+                api_key_value: row.get(7)?,
+                billing_type: row.get(8)?,
+                is_active: row.get(9)?,
+                compress_enabled: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}

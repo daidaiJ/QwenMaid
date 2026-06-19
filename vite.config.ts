@@ -33,7 +33,7 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: ["**/node_modules/**", "**/src-tauri/**", "**/.git/**"],
     },
   },
 }));

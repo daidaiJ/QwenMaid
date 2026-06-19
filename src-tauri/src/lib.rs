@@ -31,6 +31,8 @@ pub fn run() {
             commands::create_provider,
             commands::update_provider,
             commands::delete_provider,
+            commands::test_provider_key,
+            commands::update_provider_key,
             commands::list_models,
             commands::get_model,
             commands::create_model,
