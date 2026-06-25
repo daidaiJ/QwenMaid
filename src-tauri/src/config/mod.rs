@@ -199,14 +199,9 @@ fn validate_providers(
     SyncValidation { valid, errors, warnings }
 }
 
-/// 写入 .env 文件（备份旧文件）
+/// 写入 .env 文件，成功后清理历史遗留的 .env.env.* 备份
 pub fn write_env_file(keys: &Map<String, Value>) -> Result<(), String> {
     let path = env_file_path();
-    if path.exists() {
-        let ts = chrono::Local::now().format("%Y%m%dT%H%M%S");
-        let backup = path.with_extension(format!("env.{}", ts));
-        fs::copy(&path, &backup).ok();
-    }
 
     let mut content = String::new();
     for (k, v) in keys {
@@ -214,7 +209,21 @@ pub fn write_env_file(keys: &Map<String, Value>) -> Result<(), String> {
             content.push_str(&format!("{}={}\n", k, val));
         }
     }
-    fs::write(&path, content).map_err(|e| e.to_string())
+    fs::write(&path, &content).map_err(|e| e.to_string())?;
+
+    // 写入成功后清理历史遗留的 .env.env.* 备份文件
+    if let Some(parent) = path.parent() {
+        if let Ok(entries) = fs::read_dir(parent) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                if name.to_string_lossy().starts_with(".env.env.") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// 从 DB 读取 api_key_value（明文）生成 env 键值对
