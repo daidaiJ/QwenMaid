@@ -80,8 +80,8 @@ const TEMPLATES: ProviderTemplate[] = [
     proxyMode: "direct",
     billingType: "pay_per_use",
     models: [
-      { id: "deepseek-chat", name: "DeepSeek V3", authType: ["openai"] },
-      { id: "deepseek-reasoner", name: "DeepSeek R1", authType: ["openai"] },
+      { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", authType: ["openai"] },
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", authType: ["openai"] },
     ],
   },
   {

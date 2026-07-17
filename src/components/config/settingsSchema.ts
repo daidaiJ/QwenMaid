@@ -137,7 +137,7 @@ export const settingCategories: SettingCategory[] = [
         options: [],
       },
       {
-        path: "model.fastModel",
+        path: "fastModel",
         label: "快速模型",
         type: "select",
         description: "轻量快速模型，用于摘要、补全等低开销任务",

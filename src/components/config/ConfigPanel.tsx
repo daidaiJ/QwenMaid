@@ -657,7 +657,7 @@ function FieldRenderer({
             value={String(value ?? field.defaultValue ?? "")}
             onChange={onChange}
             options={
-              field.path === "model.name" || field.path === "model.fastModel"
+              field.path === "model.name" || field.path === "fastModel"
                 ? modelIds.map((id) => ({ value: id, label: id }))
                 : field.options ?? []
             }
